@@ -1,0 +1,283 @@
+@import url("https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600;700&family=Spectral+SC:wght@400;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: only light;
+}
+
+body {
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.65), transparent 45%),
+    linear-gradient(120deg, rgba(242, 226, 198, 0.98), rgba(232, 210, 176, 0.98));
+  background-size: cover, cover;
+  background-blend-mode: screen, normal;
+  background-attachment: fixed;
+  animation: parchmentPulse 18s ease-in-out infinite;
+}
+
+.parchment-panel {
+  background: rgba(252, 246, 232, 0.92);
+  border: 1px solid rgba(165, 111, 54, 0.35);
+  box-shadow: 0 18px 60px rgba(44, 28, 19, 0.35);
+}
+
+.map-surface {
+  background-image: url("/hogwarts-map.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: sepia(20%);
+}
+
+.footprint {
+  text-shadow: 0 2px 6px rgba(45, 24, 12, 0.35);
+  animation: footprintShimmer 4s ease-in-out infinite;
+  position: absolute;
+}
+
+.footprint-trail::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 60%;
+  width: 34px;
+  height: 12px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(68, 40, 18, 0.2), transparent 70%);
+  filter: blur(4px);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.magic-dust {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(255, 244, 214, 0.45), transparent 45%),
+    radial-gradient(circle at 80% 20%, rgba(255, 240, 200, 0.35), transparent 45%),
+    radial-gradient(circle at 60% 70%, rgba(255, 230, 180, 0.25), transparent 50%),
+    radial-gradient(circle at 30% 80%, rgba(255, 235, 200, 0.25), transparent 50%);
+  mix-blend-mode: screen;
+  opacity: 0.5;
+  animation: dustDrift 24s linear infinite;
+  pointer-events: none;
+}
+
+.magic-glow {
+  box-shadow: 0 0 40px rgba(255, 223, 168, 0.35), 0 18px 60px rgba(44, 28, 19, 0.35);
+}
+
+@keyframes parchmentPulse {
+  0%,
+  100% {
+    filter: brightness(1) saturate(1);
+  }
+  50% {
+    filter: brightness(1.05) saturate(1.08);
+  }
+}
+
+@keyframes dustDrift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-10px, 8px, 0) scale(1.03);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes footprintShimmer {
+  0%,
+  100% {
+    opacity: 0.9;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+/* Vertical text for tabs */
+.writing-vertical {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+/* Ink bleeding effect */
+@keyframes inkBleed {
+  0% {
+    filter: blur(0px);
+    opacity: 0;
+  }
+  20% {
+    filter: blur(1px);
+    opacity: 0.8;
+  }
+  100% {
+    filter: blur(0px);
+    opacity: 1;
+  }
+}
+
+.ink-appear {
+  animation: inkBleed 0.8s ease-out forwards;
+}
+
+/* Quill writing animation */
+@keyframes quillWrite {
+  0%, 100% {
+    transform: rotate(-5deg) translateY(0);
+  }
+  25% {
+    transform: rotate(0deg) translateY(-2px);
+  }
+  50% {
+    transform: rotate(5deg) translateY(0);
+  }
+  75% {
+    transform: rotate(0deg) translateY(-1px);
+  }
+}
+
+.quill-writing {
+  animation: quillWrite 0.5s ease-in-out infinite;
+}
+
+/* Candlelight flicker */
+@keyframes candleFlicker {
+  0%, 100% {
+    opacity: 0.08;
+  }
+  25% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 0.06;
+  }
+  75% {
+    opacity: 0.1;
+  }
+}
+
+/* Owl flight animation */
+@keyframes owlFlight {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-10px) rotate(-5deg);
+  }
+  75% {
+    transform: translateY(-5px) rotate(5deg);
+  }
+}
+
+.owl-flying {
+  animation: owlFlight 0.8s ease-in-out infinite;
+}
+
+/* Map fold lines */
+.map-crease {
+  position: absolute;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(60, 30, 10, 0.1),
+    transparent
+  );
+  width: 2px;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Spell sparkle */
+@keyframes spellSparkle {
+  0% {
+    transform: scale(0) rotate(0deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2) rotate(180deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.spell-effect {
+  animation: spellSparkle 1s ease-out forwards;
+}
+
+/* Mischief managed fade */
+@keyframes mapFade {
+  0% {
+    opacity: 1;
+    filter: blur(0px) sepia(0%);
+  }
+  50% {
+    opacity: 0.7;
+    filter: blur(2px) sepia(30%);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(10px) sepia(100%);
+  }
+}
+
+.map-closing {
+  animation: mapFade 2.5s ease-in-out forwards;
+}
+
+/* Custom scrollbar for chat */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(165, 111, 54, 0.1);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(165, 111, 54, 0.4);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(165, 111, 54, 0.6);
+}
+
+/* Night mode overlay */
+.night-overlay {
+  background: radial-gradient(
+    ellipse at center,
+    transparent 20%,
+    rgba(10, 5, 20, 0.4) 100%
+  );
+  pointer-events: none;
+}
+
+/* Curfew warning pulse */
+@keyframes curfewPulse {
+  0%, 100% {
+    opacity: 0.6;
+    text-shadow: 0 0 10px rgba(116, 0, 1, 0.5);
+  }
+  50% {
+    opacity: 1;
+    text-shadow: 0 0 20px rgba(116, 0, 1, 0.8);
+  }
+}
+
+.curfew-warning {
+  animation: curfewPulse 2s ease-in-out infinite;
+}

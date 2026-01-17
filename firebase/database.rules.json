@@ -1,0 +1,78 @@
+{
+  "rules": {
+    "rooms": {
+      ".read": "auth != null",
+      "$roomId": {
+        "users": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            "x": { ".validate": "newData.isNumber()" },
+            "y": { ".validate": "newData.isNumber()" },
+            "house": { ".validate": "newData.isString() && newData.val().length <= 20" },
+            "name": { ".validate": "newData.isString() && newData.val().length <= 30" },
+            "isIdle": { ".validate": "newData.isBoolean()" },
+            "isRunning": { ".validate": "newData.isBoolean()" },
+            "direction": { ".validate": "newData.isNumber()" },
+            "updatedAt": { ".validate": "newData.isNumber()" },
+            "lastMoveAt": { ".validate": "newData.isNumber()" }
+          }
+        },
+        
+        "messages": {
+          "$chatId": {
+            ".read": "auth != null && (data.child('participants').child(auth.uid).val() === true || !data.exists())",
+            ".write": "auth != null && (data.child('participants').child(auth.uid).val() === true || newData.child('participants').child(auth.uid).val() === true)",
+            "participants": {
+              ".validate": "newData.hasChildren()"
+            },
+            "messages": {
+              "$messageId": {
+                ".validate": "newData.hasChildren(['text', 'sender', 'createdAt'])",
+                "text": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500" },
+                "sender": { ".validate": "newData.isString() && newData.val() === auth.uid" },
+                "senderHouse": { ".validate": "newData.isString()" },
+                "senderName": { ".validate": "newData.isString() && newData.val().length <= 30" },
+                "createdAt": { ".validate": "newData.isNumber()" },
+                "deliveredTo": { ".validate": "true" },
+                "seenBy": { ".validate": "true" }
+              }
+            },
+            "status": { ".validate": "true" }
+          }
+        },
+        
+        "blocks": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        },
+        
+        "reports": {
+          "$reportedUid": {
+            "$reporterUid": {
+              ".read": "auth != null",
+              ".write": "auth != null && auth.uid === $reporterUid"
+            }
+          }
+        }
+      }
+    },
+    
+    "feedback": {
+      ".read": false,
+      "$feedbackId": {
+        ".write": "auth != null && !data.exists()",
+        ".validate": "newData.hasChildren(['rating', 'timestamp'])",
+        "rating": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 5" },
+        "comment": { ".validate": "newData.isString() && newData.val().length <= 500" },
+        "userName": { ".validate": "newData.isString() && newData.val().length <= 30" },
+        "house": { ".validate": "newData.isString() && newData.val().length <= 20" },
+        "roomId": { ".validate": "newData.isString()" },
+        "timestamp": { ".validate": "newData.isNumber()" },
+        "userAgent": { ".validate": "newData.isString() && newData.val().length <= 500" }
+      }
+    }
+  }
+}
