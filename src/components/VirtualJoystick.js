@@ -151,7 +151,7 @@ export default function VirtualJoystick({
           >
             🏃
           </button>
-          <span className="text-[8px] text-parchment-600 font-medium">{isRunning ? 'Running' : 'Run'}</span>
+          <span className="text-sm text-white font-semibold">{isRunning ? 'Running' : 'Run'}</span>
         </div>
 
         {/* Joystick - Center */}
@@ -192,7 +192,7 @@ export default function VirtualJoystick({
               <div className="w-full h-full rounded-full bg-gradient-to-br from-parchment-300/50 to-transparent" />
             </div>
           </div>
-          <span className="text-[8px] text-parchment-600 font-medium">Move</span>
+          <span className="text-sm text-white font-semibold">Move</span>
         </div>
 
         {/* Lumos Button - After joystick */}
@@ -211,7 +211,7 @@ export default function VirtualJoystick({
             >
               {lumosFlash ? "⚡" : lumosActive ? "☀️" : "🪄"}
             </button>
-            <span className="text-[8px] -mt-1 text-parchment-600 font-medium">
+            <span className="text-sm -mt-1 text-white font-semibold">
               {lumosFlash ? 'Maxima!' : lumosActive ? 'Nox' : 'Lumos'}
             </span>
           </div>
@@ -232,7 +232,7 @@ export default function VirtualJoystick({
             >
               {isRealNight ? "☀️" : "🌙"}
             </button>
-            <span className="text-[8px] text-parchment-600 font-medium">
+            <span className="text-sm text-white font-semibold">
               {isRealNight ? 'Day Mode' : 'Night'}
             </span>
           </div>
@@ -252,7 +252,7 @@ export default function VirtualJoystick({
             >
               ❌
             </button>
-            <span className="text-[8px] text-parchment-600 font-medium">Exit Mode</span>
+            <span className="text-sm text-white font-semibold">Exit Mode</span>
           </div>
         )}
       </div>
