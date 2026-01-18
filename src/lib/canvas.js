@@ -74,12 +74,15 @@ export const getTimeOfDay = () => {
   const hour = new Date().getHours();
   if (hour >= 6 && hour < 12) return "morning";
   if (hour >= 12 && hour < 17) return "afternoon";
-  if (hour >= 17 && hour < 21) return "evening";
+  // Evening: 17:00 - 18:59 (5pm - 6:59pm)
+  if (hour >= 17 && hour < 19) return "evening";
+  // Night visual overlay should begin at 19:00 (7pm)
   return "night";
 };
 
 export const isCurfew = () => {
   const hour = new Date().getHours();
+  // Curfew starts at 21:00 (9pm)
   return hour >= 21 || hour < 6;
 };
 
