@@ -299,10 +299,7 @@ export default function MapContainer() {
   const [showOwlModal, setShowOwlModal] = useState(false);
   const [owlDraft, setOwlDraft] = useState('');
   
-  // Computed states for curfew logic:
-  // - Real night = isCurfew() returns true (9PM-6AM)
-  // - Real day = isCurfew() returns false
-  const isRealNight = isCurfew();
+  // Computed states for curfew logic are defined below (kept together)
 
   // Helper: add news ticker item (stable and available early)
   const addNewsItem = useCallback((text) => {
