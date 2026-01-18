@@ -357,7 +357,8 @@ export default function MapContainer() {
   // Visual night is based on time-of-day (night visuals start at 19:00)
   const isNightVisual = getTimeOfDay() === 'night';
 
-  // Curfew/real-night behavior remains tied to the curfew clock (21:00)
+  // Treat "real night" as the visual night period (19:00 - 06:00)
+  // This makes override behavior follow the night/day boundaries you described.
   const isRealNight = isCurfew();
 
   // When to show darkness visually:
@@ -2990,32 +2991,49 @@ export default function MapContainer() {
               </motion.div>
               
               {/* Title */}
-              <h3 className={`text-xl sm:text-2xl font-magical text-center mb-3 ${isRealNight ? 'text-purple-900' : 'text-indigo-900'}`}>
-                {isRealNight ? "Override to Daylight" : "Override to Night Mode"}
+              <h3 className={`text-xl sm:text-2xl font-magical text-center mb-3 ${isNightVisual ? 'text-purple-900' : 'text-indigo-900'}`}>
+                {isNightVisual ? "Override to Daylight" : "Override to Night Mode"}
               </h3>
-              
+
               {/* Warning Message */}
               <div className="text-center mb-4 space-y-2">
-                {isRealNight ? (
-                  <>
-                    <p className="text-sm sm:text-base text-parchment-800">
-                      You want to light up the night? The creatures won&apos;t like that...
-                    </p>
-                    <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 mt-2">
-                      <p className="text-red-800 font-bold text-sm sm:text-base">
-                        💀 EXTREME DANGER 💀
+                {isNightVisual ? (
+                  // Currently visual-night (19:00+). If curfew (21:00+) is active, show ENHANCED danger.
+                  isRealNight ? (
+                    <>
+                      <p className="text-sm sm:text-base text-parchment-800">
+                        You want to light up the night? The creatures won&apos;t like that...
                       </p>
-                      <p className="text-red-700 text-xs sm:text-sm mt-1">
-                        Overriding during real night activates <strong>ENHANCED SCARY MODE</strong>!
+                      <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 mt-2">
+                        <p className="text-red-800 font-bold text-sm sm:text-base">
+                          💀 EXTREME DANGER 💀
+                        </p>
+                        <p className="text-red-700 text-xs sm:text-sm mt-1">
+                          Overriding during curfew activates <strong>ENHANCED SCARY MODE</strong>!
+                        </p>
+                        <ul className="text-red-600 text-xs mt-2 text-left list-disc list-inside">
+                          <li>NPCs detect you from <strong>50% farther</strong> away</li>
+                          <li>NPCs move <strong>1.5x faster</strong></li>
+                          <li>Freeze time <strong>60% longer</strong></li>
+                          <li>Cooldown between encounters <strong>halved</strong></li>
+                        </ul>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm sm:text-base text-parchment-800">
+                        You want to light up the night? The creatures may notice.
                       </p>
-                      <ul className="text-red-600 text-xs mt-2 text-left list-disc list-inside">
-                        <li>NPCs detect you from <strong>50% farther</strong> away</li>
-                        <li>NPCs move <strong>1.5x faster</strong></li>
-                        <li>Freeze time <strong>60% longer</strong></li>
-                        <li>Cooldown between encounters <strong>halved</strong></li>
-                      </ul>
-                    </div>
-                  </>
+                      <div className="bg-amber-900/20 border border-amber-700 rounded-lg p-3 mt-2">
+                        <p className="text-amber-800 font-bold text-sm sm:text-base">
+                          ⚠️ Warning ⚠️
+                        </p>
+                        <p className="text-amber-700 text-xs sm:text-sm mt-1">
+                          Overriding during night will disable darkness visuals; NPCs may still patrol.
+                        </p>
+                      </div>
+                    </>
+                  )
                 ) : (
                   <>
                     <p className="text-sm sm:text-base text-parchment-800">
@@ -3050,12 +3068,11 @@ export default function MapContainer() {
                     setShowNightWarning(false);
                   }}
                   className={`px-4 py-2 rounded-lg transition-colors text-sm sm:text-base font-bold ${
-                    isRealNight 
-                      ? 'bg-red-800 text-red-100 hover:bg-red-700' 
-                      : 'bg-indigo-800 text-indigo-100 hover:bg-indigo-700'
+                    // If currently visual-night and curfew active -> extreme (red)
+                    (isNightVisual && isRealNight) ? 'bg-red-800 text-red-100 hover:bg-red-700' : 'bg-indigo-800 text-indigo-100 hover:bg-indigo-700'
                   }`}
                 >
-                  {isRealNight ? "I Dare! 💀" : "Enter Night 🌙"}
+                  {(isNightVisual ? (isRealNight ? "I Dare! 💀" : "Override to Daylight") : "Enter Night 🌙")}
                 </button>
               </div>
             </motion.div>
