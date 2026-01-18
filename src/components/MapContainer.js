@@ -357,13 +357,22 @@ export default function MapContainer() {
   // - Real night WITH override = daylight (no darkness, no Lumos needed)
   // - Real day WITHOUT override = daylight (normal)
   // - Real day WITH override = dark (need Lumos)
-  const showDarkness = (isRealNight && !nightOverride) || (!isRealNight && nightOverride);
-  
-  // When scary NPCs are active:
-  // - Real night (always) OR day with override
+  // Visual night is based on time-of-day (night visuals start at 19:00)
+  const isNightVisual = getTimeOfDay() === 'night';
+
+  // Curfew/real-night behavior remains tied to the curfew clock (21:00)
+  const isRealNight = isCurfew();
+
+  // When to show darkness visually:
+  // - Visual night WITHOUT override = dark
+  // - Visual night WITH override = daylight
+  // - Visual day WITH override = dark
+  const showDarkness = (isNightVisual && !nightOverride) || (!isNightVisual && nightOverride);
+
+  // When scary NPCs are active: curfew night OR manual override
   const scaryNPCsActive = isRealNight || nightOverride;
-  
-  // Enhanced scary mode: override during real night (most dangerous!)
+
+  // Enhanced scary mode: override during curfew night (most dangerous!)
   const isEnhancedScaryMode = ENABLE_ENHANCED_SCARY_MODE && nightOverride && isRealNight;
 
   // Load map image and auto-fit to screen
