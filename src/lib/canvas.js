@@ -24,7 +24,8 @@ const HOUSE_COLORS = {
   Gryffindor: "#740001",
   Slytherin: "#1a472a",
   Hufflepuff: "#c79a1e",
-  Ravenclaw: "#0e1a40"
+  Ravenclaw: "#0e1a40",
+  gold: "#FFD700" // For The Chosen One
 };
 
 // House common room zones
@@ -482,7 +483,7 @@ export const drawFootprint = (ctx, x, y, name, house, isCurrentUser, camera, opt
   ctx.restore();
 };
 
-export const drawFootprintTrail = (ctx, trail, camera, house = "Gryffindor") => {
+export const drawFootprintTrail = (ctx, trail, camera, house = "Gryffindor", isChosenOne = false) => {
   if (!trail?.length) return;
 
   ctx.save();
@@ -503,7 +504,24 @@ export const drawFootprintTrail = (ctx, trail, camera, house = "Gryffindor") => 
     
     const isLeft = index % 2 === 0;
     
-    drawFootprintPair(ctx, point.x, point.y, direction, house, camera, {
+    // Golden glow for The Chosen One
+    if (isChosenOne) {
+      const screenX = (point.x - camera.x) * camera.zoom;
+      const screenY = (point.y - camera.y) * camera.zoom;
+      const glowRadius = 20 * camera.zoom;
+      
+      const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, glowRadius);
+      gradient.addColorStop(0, `rgba(255, 215, 0, ${alpha * 0.6})`);
+      gradient.addColorStop(0.5, `rgba(255, 200, 0, ${alpha * 0.3})`);
+      gradient.addColorStop(1, 'rgba(255, 180, 0, 0)');
+      
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, glowRadius, 0, Math.PI * 2);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+    }
+    
+    drawFootprintPair(ctx, point.x, point.y, direction, isChosenOne ? 'gold' : house, camera, {
       alpha: alpha * 0.5, inkFade: alpha, isLeft
     });
   });
@@ -865,6 +883,53 @@ export const drawScaryEncounterDialogue = (ctx, npc, dialogue, canvasWidth, canv
   }
   
   ctx.restore();
+};
+
+// Draw secret rooms with locked door indicators
+export const drawSecretRooms = (ctx, rooms, camera, timestamp, alohomoraActive = false) => {
+  rooms.forEach((room) => {
+    const screenX = (room.x - camera.x) * camera.zoom;
+    const screenY = (room.y - camera.y) * camera.zoom;
+    const width = room.width * camera.zoom;
+    const height = room.height * camera.zoom;
+    
+    ctx.save();
+    
+    // Draw room boundary
+    const pulse = Math.sin(timestamp * 0.003) * 0.2 + 0.6;
+    
+    if (alohomoraActive) {
+      // Unlocked - golden glow
+      ctx.strokeStyle = `rgba(255, 215, 0, ${pulse})`;
+      ctx.fillStyle = 'rgba(255, 215, 0, 0.1)';
+    } else {
+      // Locked - mysterious purple
+      ctx.strokeStyle = `rgba(128, 0, 128, ${pulse * 0.8})`;
+      ctx.fillStyle = 'rgba(128, 0, 128, 0.05)';
+    }
+    
+    ctx.lineWidth = 2 * camera.zoom;
+    ctx.setLineDash([5 * camera.zoom, 5 * camera.zoom]);
+    ctx.fillRect(screenX, screenY, width, height);
+    ctx.strokeRect(screenX, screenY, width, height);
+    ctx.setLineDash([]);
+    
+    // Draw lock icon
+    const iconSize = Math.max(16 * camera.zoom, 12);
+    ctx.font = `${iconSize}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = alohomoraActive ? 'rgba(255, 215, 0, 0.9)' : 'rgba(128, 0, 128, 0.9)';
+    ctx.fillText(alohomoraActive ? '🔓' : '🔒', screenX + width / 2, screenY + height / 2);
+    
+    // Draw room name
+    const fontSize = Math.max(10 * camera.zoom, 8);
+    ctx.font = `bold ${fontSize}px "Crimson Text", serif`;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.fillText(room.name, screenX + width / 2, screenY - 8 * camera.zoom);
+    
+    ctx.restore();
+  });
 };
 
 export { HOUSE_COLORS, HOUSE_ZONES, PARCHMENT_COLORS };

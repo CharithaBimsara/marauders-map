@@ -6,7 +6,7 @@
         "users": {
           ".read": "auth != null",
           "$uid": {
-            ".write": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && (auth.uid === $uid || data.exists())",
             "x": { ".validate": "newData.isNumber()" },
             "y": { ".validate": "newData.isNumber()" },
             "house": { ".validate": "newData.isString() && newData.val().length <= 20" },
@@ -15,7 +15,16 @@
             "isRunning": { ".validate": "newData.isBoolean()" },
             "direction": { ".validate": "newData.isNumber()" },
             "updatedAt": { ".validate": "newData.isNumber()" },
-            "lastMoveAt": { ".validate": "newData.isNumber()" }
+            "lastMoveAt": { ".validate": "newData.isNumber()" },
+            "invisible": { ".validate": "newData.isBoolean()" },
+            "blinded": { ".validate": "newData.isBoolean()" },
+            "blindedBy": { ".validate": "newData.isString() && newData.val().length <= 30" },
+            "knockedBack": { ".validate": "newData.isBoolean()" },
+            "knockbackX": { ".validate": "newData.isNumber()" },
+            "knockbackY": { ".validate": "newData.isNumber()" },
+            "knockedBackBy": { ".validate": "newData.isString() && newData.val().length <= 30" },
+            "polyjuiceAs": { ".validate": "newData.isString() && newData.val().length <= 30" },
+            "polyjuiceHouse": { ".validate": "newData.isString() && newData.val().length <= 20" }
           }
         },
         
@@ -56,6 +65,37 @@
               ".write": "auth != null && auth.uid === $reporterUid"
             }
           }
+        },
+        
+        "owlPost": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "message": { ".validate": "newData.isString() && newData.val().length <= 200" },
+          "sender": { ".validate": "newData.isString() && newData.val().length <= 30" },
+          "house": { ".validate": "newData.isString() && newData.val().length <= 20" },
+          "timestamp": { ".validate": "newData.isNumber()" }
+        },
+        
+        "leaderboard": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "Gryffindor": { ".validate": "newData.isNumber()" },
+          "Slytherin": { ".validate": "newData.isNumber()" },
+          "Ravenclaw": { ".validate": "newData.isNumber()" },
+          "Hufflepuff": { ".validate": "newData.isNumber()" }
+        },
+        
+        "chosenOne": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "uid": { ".validate": "newData.isString()" },
+          "name": { ".validate": "newData.isString() && newData.val().length <= 30" },
+          "expiresAt": { ".validate": "newData.isNumber()" }
+        },
+        
+        "galleons": {
+          ".read": "auth != null",
+          ".write": "auth != null"
         }
       }
     },

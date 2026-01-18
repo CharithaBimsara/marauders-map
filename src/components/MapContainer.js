@@ -74,6 +74,45 @@ const STEP_INTERVAL_WALK = 180; // ms between steps when walking
 const STEP_INTERVAL_RUN = 100;  // ms between steps when running
 const HOUSES = ["Gryffindor", "Slytherin", "Ravenclaw", "Hufflepuff"];
 
+// ============================================
+// MAGIC SYSTEM CONFIGURATION
+// ============================================
+const SPELL_CONFIG = {
+  obscuro: { cooldown: 45000, duration: 10000, range: 200, name: "Obscuro", icon: "🌑", color: "#4B0082" },
+  expelliarmus: { cooldown: 60000, range: 200, name: "Expelliarmus", icon: "⚡", color: "#FF4500" },
+  invisibility: { cooldown: 60000, duration: 15000, name: "Invisibility Cloak", icon: "👻", color: "#87CEEB" },
+  polyjuice: { cooldown: 120000, duration: 30000, name: "Polyjuice Potion", icon: "🧪", color: "#32CD32" }
+};
+
+// Mirror of Erised location
+const MIRROR_OF_ERISED = { x: 300, y: 250, radius: 40 };
+
+// Galleon spawn positions (will be updated dynamically)
+const INITIAL_GALLEON_POSITIONS = [
+  { x: 150, y: 200 },
+  { x: 400, y: 150 },
+  { x: 250, y: 400 },
+  { x: 500, y: 350 },
+  { x: 100, y: 500 }
+];
+
+// Helper: Find nearest player within range
+const findNearestPlayer = (selfX, selfY, selfUid, users, maxRange) => {
+  let nearest = null;
+  let nearestDist = maxRange;
+  
+  Object.entries(users || {}).forEach(([uid, user]) => {
+    if (uid === selfUid || !user || user.invisible) return;
+    const dist = Math.sqrt((user.x - selfX) ** 2 + (user.y - selfY) ** 2);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearest = { uid, ...user, distance: dist };
+    }
+  });
+  
+  return nearest;
+};
+
 const getRandomHouse = () => HOUSES[Math.floor(Math.random() * HOUSES.length)];
 const normalizeName = (value) => value.trim().toLowerCase();
 const getRoomNumber = (roomId) => Number(roomId.replace(ROOM_PREFIX, "")) || 0;
@@ -188,6 +227,62 @@ export default function MapContainer() {
   const [isChatMaximized, setIsChatMaximized] = useState(false); // Full screen chat mode
   const encounterCooldownRef = useRef({}); // Track cooldown per NPC
   const lastLumosClickRef = useRef(0); // For double-click detection
+
+  // ============================================
+  // MAGIC SPELL SYSTEM STATE
+  // ============================================
+  const [showSpellMenu, setShowSpellMenu] = useState(false);
+  const [spellCooldowns, setSpellCooldowns] = useState({
+    obscuro: 0,
+    expelliarmus: 0,
+    invisibility: 0,
+    polyjuice: 0
+  });
+  const [activeSpells, setActiveSpells] = useState({
+    invisibility: false,    // Hidden from others
+    polyjuice: false        // Disguised as another player
+  });
+  const [polyjuiceDisguise, setPolyjuiceDisguise] = useState(null); // Name to display as
+  const [isBlinded, setIsBlinded] = useState(false);         // Blinded by Obscuro
+  const [blindedUntil, setBlindedUntil] = useState(0);
+  const [showKnockbackFlash, setShowKnockbackFlash] = useState(false);
+  const [spellCastMessage, setSpellCastMessage] = useState(null);
+  
+  // ============================================
+  // NEW FEATURES STATE
+  // ============================================
+  // Floating Candles
+  const [floatingCandles, setFloatingCandles] = useState([]);
+  
+  // Magical Weather
+  const [isRaining, setIsRaining] = useState(false);
+  const [rainParticles, setRainParticles] = useState([]);
+  const RAIN_TRAIL_LENGTH = 30; // Extended trail during rain
+  
+  // Magical Creatures (Hedwig & Scabbers)
+  const [hedwig, setHedwig] = useState({ x: 100, y: 50, targetX: 500, targetY: 100 });
+  const [scabbers, setScabbers] = useState({ x: 50, y: 700, direction: 1 });
+  
+  // Mirror of Erised - shows "Headmaster [Name]" to self
+  const [nearMirror, setNearMirror] = useState(false);
+  
+  // The Chosen One
+  const [chosenOne, setChosenOne] = useState(null); // uid of the chosen one
+  const [isChosen, setIsChosen] = useState(false);
+  
+  // Owl Post (global messaging)
+  const [owlPostMessage, setOwlPostMessage] = useState(null);
+  const [showOwlPostBanner, setShowOwlPostBanner] = useState(false);
+  
+  // Daily Prophet News Ticker
+  const [newsTickerItems, setNewsTickerItems] = useState([]);
+  
+  // Galleons & Leaderboard
+  const [galleons, setGalleons] = useState(INITIAL_GALLEON_POSITIONS.map((pos, i) => ({ ...pos, id: i, collected: false })));
+  const [leaderboard, setLeaderboard] = useState({ Gryffindor: 0, Slytherin: 0, Ravenclaw: 0, Hufflepuff: 0 });
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showOwlModal, setShowOwlModal] = useState(false);
+  const [owlDraft, setOwlDraft] = useState('');
   
   // Computed states for curfew logic:
   // - Real night = isCurfew() returns true (9PM-6AM)
@@ -245,6 +340,135 @@ export default function MapContainer() {
   useEffect(() => {
     setScaryNPCs(initializeScaryNPCs());
   }, []);
+  
+  // ============================================
+  // INITIALIZE FLOATING CANDLES
+  // ============================================
+  useEffect(() => {
+    const candles = Array.from({ length: 12 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 600 + 50,
+      y: Math.random() * 500 + 50,
+      baseY: Math.random() * 500 + 50,
+      drift: Math.random() * Math.PI * 2,
+      speed: 0.5 + Math.random() * 0.5,
+      flicker: Math.random()
+    }));
+    setFloatingCandles(candles);
+  }, []);
+  
+  // Update floating candles animation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFloatingCandles(prev => prev.map(candle => ({
+        ...candle,
+        x: candle.x + Math.sin(Date.now() * 0.001 * candle.speed + candle.drift) * 0.3,
+        y: candle.baseY + Math.sin(Date.now() * 0.002 * candle.speed) * 10,
+        flicker: 0.7 + Math.random() * 0.3
+      })));
+    }, 50);
+    return () => clearInterval(interval);
+  }, []);
+  
+  // ============================================
+  // MAGICAL WEATHER (RAIN)
+  // ============================================
+  useEffect(() => {
+    // Random chance to start/stop rain every 5 minutes
+    const weatherInterval = setInterval(() => {
+      if (Math.random() < 0.3) { // 30% chance
+        setIsRaining(prev => !prev);
+        if (!isRaining) {
+          addNewsItem("🌧️ Magical rain begins to fall over Hogwarts!");
+        } else {
+          addNewsItem("☀️ The rain has stopped!");
+        }
+      }
+    }, 300000); // 5 minutes
+    
+    return () => clearInterval(weatherInterval);
+  }, [isRaining]);
+  
+  // Update rain particles
+  useEffect(() => {
+    if (!isRaining) {
+      setRainParticles([]);
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      setRainParticles(prev => {
+        // Add new particles
+        const newParticles = Array.from({ length: 5 }, () => ({
+          x: Math.random() * canvasSize.width,
+          y: -10,
+          speed: 5 + Math.random() * 5,
+          length: 10 + Math.random() * 10
+        }));
+        
+        // Update existing and filter out-of-bounds
+        return [...prev, ...newParticles]
+          .map(p => ({ ...p, y: p.y + p.speed }))
+          .filter(p => p.y < canvasSize.height)
+          .slice(-200); // Max 200 particles
+      });
+    }, 50);
+    
+    return () => clearInterval(interval);
+  }, [isRaining, canvasSize.height, canvasSize.width]);
+  
+  // ============================================
+  // MAGICAL CREATURES (HEDWIG & SCABBERS)
+  // ============================================
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Update Hedwig (flying owl)
+      setHedwig(prev => {
+        const dx = prev.targetX - prev.x;
+        const dy = prev.targetY - prev.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist < 10) {
+          // Pick new target
+          return {
+            ...prev,
+            targetX: Math.random() * 600 + 50,
+            targetY: Math.random() * 200 + 30
+          };
+        }
+        
+        return {
+          ...prev,
+          x: prev.x + (dx / dist) * 2,
+          y: prev.y + (dy / dist) * 2
+        };
+      });
+      
+      // Update Scabbers (scurrying rat)
+      setScabbers(prev => {
+        let newX = prev.x + prev.direction * 1.5;
+        let newDirection = prev.direction;
+        
+        if (newX < 20 || newX > 580) {
+          newDirection = -prev.direction;
+          newX = prev.x + newDirection * 1.5;
+        }
+        
+        // Random direction change
+        if (Math.random() < 0.02) {
+          newDirection = -newDirection;
+        }
+        
+        return {
+          ...prev,
+          x: newX,
+          direction: newDirection
+        };
+      });
+    }, 50);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   // Force re-render when time changes (for curfew state)
   const [, forceUpdate] = useState(0);
@@ -270,8 +494,8 @@ export default function MapContainer() {
 
   // Check for scary NPC encounters (only when scary NPCs are active and NOT chatting)
   useEffect(() => {
-    // Skip scary encounters when user is actively chatting
-    if (!hasProfile || isPlayerFrozen || scaryEncounter || !scaryNPCsActive || activeTarget) return;
+    // Skip scary encounters when user is actively chatting or invisible (Invisibility Cloak)
+    if (!hasProfile || isPlayerFrozen || scaryEncounter || !scaryNPCsActive || activeTarget || activeSpells.invisibility) return;
     
     // Enhanced scary mode: larger encounter radius, shorter cooldown, longer freeze
     const ENCOUNTER_RADIUS = isEnhancedScaryMode ? 120 : 80;
@@ -296,7 +520,7 @@ export default function MapContainer() {
         }
       }
     }
-  }, [selfPosition, scaryNPCs, hasProfile, isPlayerFrozen, scaryEncounter, isEnhancedScaryMode, scaryNPCsActive, activeTarget]);
+  }, [selfPosition, scaryNPCs, hasProfile, isPlayerFrozen, scaryEncounter, isEnhancedScaryMode, scaryNPCsActive, activeTarget, activeSpells.invisibility]);
 
   // Unfreeze player after freeze duration and auto-dismiss encounter
   useEffect(() => {
@@ -436,6 +660,185 @@ export default function MapContainer() {
 
     return () => unsubscribe();
   }, [roomId, userId]);
+
+  // Listen for spell effects on self (blinded, knockback from other players)
+  useEffect(() => {
+    if (!roomId || !userId) return;
+
+    const userRef = ref(db, `rooms/${roomId}/users/${userId}`);
+    const unsubscribe = onValue(userRef, (snapshot) => {
+      const data = snapshot.val();
+      if (!data) return;
+
+      // Check for Obscuro (blinded) effect
+      if (data.blinded && data.blindedUntil > Date.now()) {
+        setIsBlinded(true);
+        setBlindedUntil(data.blindedUntil);
+        // Auto-clear when time expires
+        const remaining = data.blindedUntil - Date.now();
+        setTimeout(() => {
+          setIsBlinded(false);
+          update(ref(db, `rooms/${roomId}/users/${userId}`), { blinded: false, blindedUntil: 0 });
+        }, remaining);
+      }
+
+      // Check for Expelliarmus knockback
+      if (data.knockedBack && data.knockbackX !== undefined) {
+        setShowKnockbackFlash(true);
+        setSelfPosition({ x: data.knockbackX, y: data.knockbackY });
+        setTimeout(() => setShowKnockbackFlash(false), 500);
+        // Clear the knockback flag
+        update(ref(db, `rooms/${roomId}/users/${userId}`), {
+          knockedBack: false,
+          knockbackX: null,
+          knockbackY: null,
+          x: data.knockbackX,
+          y: data.knockbackY
+        });
+      }
+    });
+
+    return () => unsubscribe();
+  }, [roomId, userId]);
+
+  // ============================================
+  // GLOBAL FEATURES FIREBASE LISTENERS
+  // ============================================
+  
+  // Listen for Owl Post messages
+  useEffect(() => {
+    if (!roomId) return;
+    
+    const owlPostRef = ref(db, `rooms/${roomId}/owlPost`);
+    const unsubscribe = onValue(owlPostRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && data.message && data.timestamp > Date.now() - 30000) {
+        setOwlPostMessage(data);
+        setShowOwlPostBanner(true);
+        setTimeout(() => setShowOwlPostBanner(false), 10000);
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [roomId]);
+  
+  // Listen for leaderboard updates
+  useEffect(() => {
+    if (!roomId) return;
+    
+    const leaderboardRef = ref(db, `rooms/${roomId}/leaderboard`);
+    const unsubscribe = onValue(leaderboardRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setLeaderboard(prev => ({ ...prev, ...data }));
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [roomId]);
+  
+  // Listen for The Chosen One status
+  useEffect(() => {
+    if (!roomId) return;
+    
+    const chosenRef = ref(db, `rooms/${roomId}/chosenOne`);
+    const unsubscribe = onValue(chosenRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data && data.uid && data.expiresAt > Date.now()) {
+        setChosenOne(data.uid);
+        setIsChosen(data.uid === userId);
+        if (data.uid === userId) {
+          setSpellCastMessage({ text: '⚡ You are THE CHOSEN ONE! Golden footprints & see all!', type: 'success' });
+          setTimeout(() => setSpellCastMessage(null), 5000);
+        }
+      } else {
+        setChosenOne(null);
+        setIsChosen(false);
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [roomId, userId]);
+  
+  // Select The Chosen One every 10 minutes
+  useEffect(() => {
+    if (!roomId || !userId) return;
+    
+    const selectChosenOne = async () => {
+      const activeUserIds = Object.keys(users).filter(uid => {
+        const user = users[uid];
+        return user && Date.now() - (user.updatedAt || 0) < ACTIVE_WINDOW_MS;
+      });
+      
+      if (activeUserIds.length === 0) return;
+      
+      // Only the first user (alphabetically) does the selection to avoid conflicts
+      const sortedIds = activeUserIds.sort();
+      if (sortedIds[0] !== userId) return;
+      
+      const chosenUid = activeUserIds[Math.floor(Math.random() * activeUserIds.length)];
+      const chosenUser = users[chosenUid];
+      
+      await set(ref(db, `rooms/${roomId}/chosenOne`), {
+        uid: chosenUid,
+        name: chosenUser?.name || 'Unknown',
+        expiresAt: Date.now() + 600000 // 10 minutes
+      });
+      
+      addNewsItem(`⚡ ${chosenUser?.name || 'A wizard'} is THE CHOSEN ONE!`);
+    };
+    
+    // Initial selection after 1 minute
+    const initialTimeout = setTimeout(selectChosenOne, 60000);
+    
+    // Then every 10 minutes
+    const interval = setInterval(selectChosenOne, 600000);
+    
+    return () => {
+      clearTimeout(initialTimeout);
+      clearInterval(interval);
+    };
+  }, [roomId, userId, users]);
+  
+  // Listen for galleon updates
+  useEffect(() => {
+    if (!roomId) return;
+    
+    const galleonsRef = ref(db, `rooms/${roomId}/galleons`);
+    const unsubscribe = onValue(galleonsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setGalleons(prev => prev.map((g, i) => ({
+          ...g,
+          collected: data[i]?.collected || false
+        })));
+      }
+    });
+    
+    return () => unsubscribe();
+  }, [roomId]);
+  
+  // Respawn galleons every 2 minutes
+  useEffect(() => {
+    if (!roomId || !userId) return;
+    
+    const respawnInterval = setInterval(async () => {
+      // Only first user handles respawn
+      const sortedIds = Object.keys(users).sort();
+      if (sortedIds[0] !== userId) return;
+      
+      const newGalleons = INITIAL_GALLEON_POSITIONS.map((pos, i) => ({
+        x: pos.x + (Math.random() - 0.5) * 100,
+        y: pos.y + (Math.random() - 0.5) * 100,
+        collected: false
+      }));
+      
+      await set(ref(db, `rooms/${roomId}/galleons`), newGalleons);
+      setGalleons(newGalleons.map((g, i) => ({ ...g, id: i })));
+    }, 120000); // 2 minutes
+    
+    return () => clearInterval(respawnInterval);
+  }, [roomId, userId, users]);
 
   // Detect newly joined users and show a small notification
   useEffect(() => {
@@ -676,8 +1079,22 @@ export default function MapContainer() {
 
       const mapWidth = mapImageRef.current?.width || 1200;
       const mapHeight = mapImageRef.current?.height || 800;
-      const clampedX = Math.max(0, Math.min(nextX, mapWidth - 24));
-      const clampedY = Math.max(0, Math.min(nextY, mapHeight - 24));
+      let clampedX = Math.max(0, Math.min(nextX, mapWidth - 24));
+      let clampedY = Math.max(0, Math.min(nextY, mapHeight - 24));
+
+      // Check for galleon collection
+      galleons.forEach((galleon, index) => {
+        if (!galleon.collected) {
+          const dist = Math.sqrt((clampedX - galleon.x) ** 2 + (clampedY - galleon.y) ** 2);
+          if (dist < 25) {
+            collectGalleon(index);
+          }
+        }
+      });
+      
+      // Check if near Mirror of Erised
+      const mirrorDist = Math.sqrt((clampedX - MIRROR_OF_ERISED.x) ** 2 + (clampedY - MIRROR_OF_ERISED.y) ** 2);
+      setNearMirror(mirrorDist < MIRROR_OF_ERISED.radius);
 
       setSelfPosition({ x: clampedX, y: clampedY });
       setLastMoveAt(Date.now());
@@ -738,7 +1155,7 @@ export default function MapContainer() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [userId, hasProfile, isBanned, roomId, selfPosition.x, selfPosition.y, movementDirection, isPlayerFrozen]);
+  }, [userId, hasProfile, isBanned, roomId, selfPosition.x, selfPosition.y, movementDirection, isPlayerFrozen, activeSpells.alohomora]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1011,12 +1428,31 @@ export default function MapContainer() {
       drawSecretPassages(ctx, camera, timestamp, []);
       drawMovingStaircases(ctx, camera, timestamp);
       
+      // Draw floating candles
+      drawFloatingCandles(ctx, floatingCandles, camera, timestamp);
+      
+      // Draw rain if active
+      if (isRaining) {
+        drawRain(ctx, rainParticles, canvasSize.width, canvasSize.height);
+      }
+      
+      // Draw galleons
+      drawGalleons(ctx, galleons, camera, timestamp);
+      
+      // Draw Mirror of Erised
+      drawMirrorOfErised(ctx, MIRROR_OF_ERISED, camera, timestamp);
+      
+      // Draw magical creatures (Hedwig & Scabbers)
+      drawHedwig(ctx, hedwig, camera, timestamp);
+      drawScabbers(ctx, scabbers, camera, timestamp);
+      
       // Draw house zone for current user
       if (house) {
         drawHouseZone(ctx, house, camera, timestamp);
       }
 
-      // Footprint trail
+      // Footprint trail - longer during rain
+      const maxTrailLength = isRaining ? RAIN_TRAIL_LENGTH : TRAIL_MAX_LENGTH;
       if (Date.now() - lastTrailTimeRef.current > TRAIL_POINT_INTERVAL) {
         trailRef.current.push({
           x: selfPosition.x,
@@ -1025,21 +1461,28 @@ export default function MapContainer() {
           direction: movementDirection,
           isRunning
         });
-        if (trailRef.current.length > TRAIL_MAX_LENGTH) {
+        if (trailRef.current.length > maxTrailLength) {
           trailRef.current.shift();
         }
         lastTrailTimeRef.current = Date.now();
       }
 
       trailRef.current = trailRef.current.filter(
-        (point) => Date.now() - point.timestamp < 3000
+        (point) => Date.now() - point.timestamp < (isRaining ? 6000 : 3000)
       );
 
-      drawFootprintTrail(ctx, trailRef.current, camera, house);
+      // Draw footprint trail with golden glow if chosen one
+      drawFootprintTrail(ctx, trailRef.current, camera, house, isChosen);
 
-      // Draw other users
+      // Draw other users (filter out invalid users)
       Object.entries(users).forEach(([uid, user]) => {
         if (uid === userId) return;
+        
+        // Skip users without valid data
+        if (!user || !user.name || user.name === 'undefined') return;
+
+        // Skip invisible players (unless they're the current user)
+        if (user.invisible) return;
 
         const isBlocked = Boolean(
           blocksData?.[userId]?.[uid] || blocksData?.[uid]?.[userId]
@@ -1075,10 +1518,14 @@ export default function MapContainer() {
           (point) => Date.now() - point.timestamp < 3000
         );
         
-        // Draw trail for this user
-        drawFootprintTrail(ctx, otherUsersTrailsRef.current[uid], camera, user.house);
-
-        drawFootprint(ctx, user.x, user.y, user.name, user.house, false, camera, {
+        // Use polyjuice disguise if active (name + house), otherwise real identity
+        const displayName = user.polyjuiceAs || user.name;
+        const displayHouse = user.polyjuiceHouse || user.house;
+        
+        // Draw trail for this user (with disguised house color if polyjuiced)
+        drawFootprintTrail(ctx, otherUsersTrailsRef.current[uid], camera, displayHouse);
+        
+        drawFootprint(ctx, user.x, user.y, displayName, displayHouse, false, camera, {
           isIdle: user.isIdle,
           isBlocked,
           isNearby,
@@ -1253,6 +1700,318 @@ export default function MapContainer() {
       .filter((user) => user.distance <= chatRadius && !user.isBlocked)
       .sort((a, b) => a.distance - b.distance);
   }, [otherUsers, selfPosition, userId, whisperMode]);
+
+  // ============================================
+  // NEWS TICKER & OWL POST FUNCTIONS
+  // ============================================
+  
+  const addNewsItem = useCallback((text) => {
+    const newsItem = {
+      id: Date.now(),
+      text,
+      timestamp: Date.now()
+    };
+    setNewsTickerItems(prev => [newsItem, ...prev].slice(0, 10)); // Keep last 10
+  }, []);
+  
+  const sendOwlPost = useCallback(async (message) => {
+    if (!roomId || !message.trim()) return;
+    
+    await set(ref(db, `rooms/${roomId}/owlPost`), {
+      message: message.trim(),
+      sender: name,
+      house,
+      timestamp: Date.now()
+    });
+    
+    addNewsItem(`🦉 ${name} sent an Owl Post!`);
+  }, [roomId, name, house, addNewsItem]);
+  
+  // ============================================
+  // GALLEON COLLECTION
+  // ============================================
+  
+  const collectGalleon = useCallback(async (index) => {
+    if (!roomId || !house) return;
+    
+    // Mark as collected
+    await update(ref(db, `rooms/${roomId}/galleons/${index}`), {
+      collected: true
+    });
+    
+    // Update house points
+    const newPoints = (leaderboard[house] || 0) + 10;
+    await update(ref(db, `rooms/${roomId}/leaderboard`), {
+      [house]: newPoints
+    });
+    
+    setGalleons(prev => prev.map((g, i) => i === index ? { ...g, collected: true } : g));
+    setSpellCastMessage({ text: `💰 +10 points for ${house}!`, type: 'success' });
+    addNewsItem(`💰 ${name} collected a Galleon for ${house}!`);
+    setTimeout(() => setSpellCastMessage(null), 2000);
+  }, [roomId, house, name, leaderboard, addNewsItem]);
+
+  // ============================================
+  // DRAWING HELPER FUNCTIONS
+  // ============================================
+  
+  const drawFloatingCandles = (ctx, candles, camera, timestamp) => {
+    candles.forEach(candle => {
+      const screenX = (candle.x - camera.x) * camera.zoom;
+      const screenY = (candle.y - camera.y) * camera.zoom;
+      
+      // Candle glow
+      const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, 15 * camera.zoom);
+      gradient.addColorStop(0, `rgba(255, 200, 100, ${candle.flicker * 0.8})`);
+      gradient.addColorStop(0.5, `rgba(255, 150, 50, ${candle.flicker * 0.4})`);
+      gradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+      
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, 15 * camera.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = gradient;
+      ctx.fill();
+      
+      // Candle flame
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, 3 * camera.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 200, ${candle.flicker})`;
+      ctx.fill();
+    });
+  };
+  
+  const drawRain = (ctx, particles, width, height) => {
+    ctx.strokeStyle = 'rgba(100, 150, 255, 0.5)';
+    ctx.lineWidth = 1;
+    
+    particles.forEach(p => {
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - 1, p.y + p.length);
+      ctx.stroke();
+    });
+  };
+  
+  const drawGalleons = (ctx, galleons, camera, timestamp) => {
+    galleons.forEach(galleon => {
+      if (galleon.collected) return;
+      
+      const screenX = (galleon.x - camera.x) * camera.zoom;
+      const screenY = (galleon.y - camera.y) * camera.zoom;
+      const bounce = Math.sin(timestamp * 0.005 + galleon.id) * 3;
+      
+      // Coin glow
+      const pulse = 0.5 + Math.sin(timestamp * 0.003) * 0.3;
+      ctx.beginPath();
+      ctx.arc(screenX, screenY + bounce, 12 * camera.zoom, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 215, 0, ${pulse * 0.3})`;
+      ctx.fill();
+      
+      // Coin
+      ctx.font = `${16 * camera.zoom}px "Segoe UI Emoji", "Apple Color Emoji", Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🪙', screenX, screenY + bounce);
+    });
+  };
+  
+  const drawMirrorOfErised = (ctx, mirror, camera, timestamp) => {
+    const screenX = (mirror.x - camera.x) * camera.zoom;
+    const screenY = (mirror.y - camera.y) * camera.zoom;
+    const pulse = 0.3 + Math.sin(timestamp * 0.002) * 0.2;
+    
+    // Mirror glow
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, mirror.radius * camera.zoom, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(200, 180, 255, ${pulse})`;
+    ctx.fill();
+    
+    // Mirror icon
+    ctx.font = `${20 * camera.zoom}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🪞', screenX, screenY);
+    
+    // Label
+    ctx.font = `${8 * camera.zoom}px "Crimson Text", serif`;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.fillText('Mirror of Erised', screenX, screenY + 25 * camera.zoom);
+  };
+  
+  const drawHedwig = (ctx, hedwig, camera, timestamp) => {
+    const screenX = (hedwig.x - camera.x) * camera.zoom;
+    const screenY = (hedwig.y - camera.y) * camera.zoom;
+    const wingFlap = Math.sin(timestamp * 0.02) * 3;
+    
+    ctx.font = `${18 * camera.zoom}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.save();
+    ctx.translate(screenX, screenY + wingFlap);
+    // Face direction of movement
+    if (hedwig.targetX < hedwig.x) {
+      ctx.scale(-1, 1);
+    }
+    ctx.fillText('🦉', 0, 0);
+    ctx.restore();
+  };
+  
+  const drawScabbers = (ctx, scabbers, camera, timestamp) => {
+    const screenX = (scabbers.x - camera.x) * camera.zoom;
+    const screenY = (scabbers.y - camera.y) * camera.zoom;
+    
+    ctx.font = `${12 * camera.zoom}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    if (scabbers.direction < 0) {
+      ctx.scale(-1, 1);
+    }
+    ctx.fillText('🐀', 0, 0);
+    ctx.restore();
+  };
+
+  // ============================================
+  // SPELL CASTING FUNCTIONS
+  // ============================================
+  
+  const castSpell = useCallback(async (spellName) => {
+    if (!roomId || !userId) return;
+    
+    const config = SPELL_CONFIG[spellName];
+    if (!config) return;
+    
+    // Check cooldown
+    const now = Date.now();
+    if (spellCooldowns[spellName] > now) {
+      const remaining = Math.ceil((spellCooldowns[spellName] - now) / 1000);
+      setSpellCastMessage({ text: `⏳ ${config.name} on cooldown (${remaining}s)`, type: 'warning' });
+      setTimeout(() => setSpellCastMessage(null), 2000);
+      return;
+    }
+    
+    // Set cooldown
+    setSpellCooldowns(prev => ({ ...prev, [spellName]: now + config.cooldown }));
+    setShowSpellMenu(false);
+    
+    // Add to news ticker
+    addNewsItem(`${name} cast ${config.name}!`);
+    
+    switch (spellName) {
+      case 'polyjuice': {
+        // Get list of other players in the room (filter out undefined names)
+        const otherPlayers = Object.entries(users)
+          .filter(([uid, user]) => uid !== userId && user.name && user.name !== 'undefined')
+          .map(([, user]) => ({ name: user.name, house: user.house }));
+        
+        if (otherPlayers.length === 0) {
+          setSpellCastMessage({ text: '🧪 No other wizards to disguise as!', type: 'warning' });
+          setTimeout(() => setSpellCastMessage(null), 2000);
+          return;
+        }
+        
+        // Pick a random player to disguise as
+        const disguiseTarget = otherPlayers[Math.floor(Math.random() * otherPlayers.length)];
+        setPolyjuiceDisguise(disguiseTarget.name);
+        setActiveSpells(prev => ({ ...prev, polyjuice: true }));
+        
+        // Update Firebase with disguise (name + house)
+        await update(ref(db, `rooms/${roomId}/users/${userId}`), {
+          polyjuiceAs: disguiseTarget.name,
+          polyjuiceHouse: disguiseTarget.house
+        });
+        
+        setSpellCastMessage({ text: `🧪 POLYJUICE! You now appear as "${disguiseTarget.name}" to others!`, type: 'success' });
+        triggerSpellEffect(selfPosition.x, selfPosition.y, 'polyjuice');
+        
+        setTimeout(async () => {
+          setPolyjuiceDisguise(null);
+          setActiveSpells(prev => ({ ...prev, polyjuice: false }));
+          await update(ref(db, `rooms/${roomId}/users/${userId}`), {
+            polyjuiceAs: null,
+            polyjuiceHouse: null
+          });
+          setSpellCastMessage({ text: '🧪 Polyjuice effect wore off!', type: 'info' });
+          setTimeout(() => setSpellCastMessage(null), 2000);
+        }, config.duration);
+        break;
+      }
+      
+      case 'obscuro': {
+        const target = findNearestPlayer(selfPosition.x, selfPosition.y, userId, users, config.range);
+        if (!target) {
+          setSpellCastMessage({ text: '🌑 No target in range!', type: 'warning' });
+          setTimeout(() => setSpellCastMessage(null), 2000);
+          return;
+        }
+        
+        // Update target's Firebase status to blinded
+        await update(ref(db, `rooms/${roomId}/users/${target.uid}`), {
+          blinded: true,
+          blindedUntil: now + config.duration,
+          blindedBy: name
+        });
+        
+        setSpellCastMessage({ text: `🌑 OBSCURO! ${target.name} is blinded!`, type: 'success' });
+        triggerSpellEffect(target.x, target.y, 'obscuro');
+        setTimeout(() => setSpellCastMessage(null), 3000);
+        break;
+      }
+      
+      case 'expelliarmus': {
+        const target = findNearestPlayer(selfPosition.x, selfPosition.y, userId, users, config.range);
+        if (!target) {
+          setSpellCastMessage({ text: '⚡ No target in range!', type: 'warning' });
+          setTimeout(() => setSpellCastMessage(null), 2000);
+          return;
+        }
+        
+        // Calculate random knockback position (far away)
+        const mapWidth = mapImageRef.current?.width || 1200;
+        const mapHeight = mapImageRef.current?.height || 800;
+        const knockbackX = Math.floor(Math.random() * (mapWidth - 100)) + 50;
+        const knockbackY = Math.floor(Math.random() * (mapHeight - 100)) + 50;
+        
+        // Update target's Firebase to trigger knockback
+        await update(ref(db, `rooms/${roomId}/users/${target.uid}`), {
+          knockedBack: true,
+          knockbackX,
+          knockbackY,
+          knockedBackBy: name
+        });
+        
+        setShowKnockbackFlash(true);
+        setTimeout(() => setShowKnockbackFlash(false), 300);
+        
+        setSpellCastMessage({ text: `⚡ EXPELLIARMUS! ${target.name} was knocked back!`, type: 'success' });
+        triggerSpellEffect(target.x, target.y, 'expelliarmus');
+        setTimeout(() => setSpellCastMessage(null), 3000);
+        break;
+      }
+      
+      case 'invisibility': {
+        setActiveSpells(prev => ({ ...prev, invisibility: true }));
+        
+        // Update Firebase status
+        await update(ref(db, `rooms/${roomId}/users/${userId}`), {
+          invisible: true
+        });
+        
+        setSpellCastMessage({ text: `👻 Invisibility Cloak active for ${config.duration / 1000}s`, type: 'success' });
+        triggerSpellEffect(selfPosition.x, selfPosition.y, 'invisibility');
+        
+        setTimeout(async () => {
+          setActiveSpells(prev => ({ ...prev, invisibility: false }));
+          await update(ref(db, `rooms/${roomId}/users/${userId}`), {
+            invisible: false
+          });
+          setSpellCastMessage({ text: '👀 You are visible again', type: 'info' });
+          setTimeout(() => setSpellCastMessage(null), 2000);
+        }, config.duration);
+        break;
+      }
+    }
+  }, [roomId, userId, selfPosition, users, name, spellCooldowns]);
 
   const handleSelectChatTarget = (target) => {
     if (!target || !userId || isBlockedPair(target.uid)) return;
@@ -1707,6 +2466,368 @@ export default function MapContainer() {
           onTouchEnd={handleTouchEnd}
         />
       </div>
+
+      {/* ============================================ */}
+      {/* WAND SPELL MENU - DESKTOP */}
+      {/* ============================================ */}
+      <div className="fixed z-40 hidden sm:block left-8 bottom-8">
+        {/* Wand Button */}
+        <button
+          type="button"
+          onClick={() => setShowSpellMenu(!showSpellMenu)}
+          className={`w-14 h-14 rounded-full border-2 flex items-center justify-center text-2xl transition-all shadow-xl
+            ${showSpellMenu 
+              ? 'bg-amber-500/90 border-amber-400 text-amber-900 scale-110 shadow-[0_0_20px_rgba(251,191,36,0.6)]' 
+              : 'bg-parchment-700/90 border-parchment-500 text-parchment-100 hover:bg-parchment-600'
+            }
+            ${activeSpells.invisibility ? 'opacity-50' : ''}`}
+          title="Open Wand Menu"
+        >
+          🪄
+        </button>
+        
+        {/* Radial Spell Menu */}
+        <AnimatePresence>
+          {showSpellMenu && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.5 }}
+              className="absolute bottom-16 left-0"
+            >
+              <div className="relative w-48 h-48">
+                {Object.entries(SPELL_CONFIG).map(([spellKey, spell], index) => {
+                  const angle = (index * (360 / 4) - 90) * (Math.PI / 180);
+                  const radius = 70;
+                  const x = Math.cos(angle) * radius + 80;
+                  const y = Math.sin(angle) * radius + 80;
+                  
+                  const isOnCooldown = spellCooldowns[spellKey] > Date.now();
+                  const cooldownRemaining = isOnCooldown 
+                    ? Math.ceil((spellCooldowns[spellKey] - Date.now()) / 1000) 
+                    : 0;
+                  
+                  return (
+                    <motion.button
+                      key={spellKey}
+                      initial={{ opacity: 0, scale: 0 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      onClick={() => castSpell(spellKey)}
+                      disabled={isOnCooldown}
+                      className={`absolute w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center text-xl transition-all shadow-lg
+                        ${isOnCooldown 
+                          ? 'bg-gray-600/80 border-gray-500 text-gray-400 cursor-not-allowed' 
+                          : 'bg-parchment-800/90 border-parchment-500 text-white hover:scale-110 hover:shadow-xl'
+                        }`}
+                      style={{ 
+                        left: x, 
+                        top: y,
+                        transform: 'translate(-50%, -50%)',
+                        boxShadow: isOnCooldown ? 'none' : `0 0 15px ${spell.color}40`
+                      }}
+                      title={`${spell.name}${isOnCooldown ? ` (${cooldownRemaining}s)` : ''}`}
+                    >
+                      <span>{spell.icon}</span>
+                      {isOnCooldown && (
+                        <span className="text-[10px] font-bold">{cooldownRemaining}s</span>
+                      )}
+                    </motion.button>
+                  );
+                })}
+                
+                {/* Center label */}
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
+                  <span className="text-parchment-300 text-xs font-bold">SPELLS</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Spell Cast Message */}
+      <AnimatePresence>
+        {spellCastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className={`fixed z-50 top-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl shadow-2xl text-white font-bold text-lg
+              ${spellCastMessage.type === 'success' ? 'bg-green-600/90' : 
+                spellCastMessage.type === 'warning' ? 'bg-amber-600/90' : 'bg-blue-600/90'}`}
+          >
+            {spellCastMessage.text}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Blind Overlay (Obscuro effect) */}
+      <AnimatePresence>
+        {isBlinded && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black flex items-center justify-center pointer-events-none"
+          >
+            <motion.div
+              animate={{ scale: [1, 1.1, 1], opacity: [0.8, 1, 0.8] }}
+              transition={{ repeat: Infinity, duration: 2 }}
+              className="text-center"
+            >
+              <div className="text-6xl mb-4">🌑</div>
+              <div className="text-white text-2xl font-bold">OBSCURO!</div>
+              <div className="text-gray-400 text-sm mt-2">You've been blinded!</div>
+              <div className="text-gray-500 text-xs mt-1">
+                {Math.ceil((blindedUntil - Date.now()) / 1000)}s remaining
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Knockback Flash (Expelliarmus effect) */}
+      <AnimatePresence>
+        {showKnockbackFlash && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0, 1, 0] }}
+            transition={{ duration: 0.5 }}
+            className="fixed inset-0 z-[90] bg-red-500/50 pointer-events-none"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Active Spell Indicators */}
+      <div className="fixed z-30 top-20 right-4 flex flex-col gap-2">
+        {activeSpells.polyjuice && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-green-600/90 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg"
+          >
+            🧪 Disguised as {polyjuiceDisguise}
+          </motion.div>
+        )}
+        {activeSpells.invisibility && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-blue-600/90 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg"
+          >
+            👻 Invisible
+          </motion.div>
+        )}
+        {isChosen && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-gradient-to-r from-yellow-500 to-amber-500 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg shadow-yellow-500/50"
+          >
+            ⚡ THE CHOSEN ONE
+          </motion.div>
+        )}
+        {nearMirror && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-purple-600/90 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg"
+          >
+            🪞 Headmaster {name}
+          </motion.div>
+        )}
+      </div>
+      
+      {/* Top Left Buttons - Below name badge on mobile, normal on desktop */}
+      <div className="fixed z-30 top-16 sm:top-4 left-4 flex items-center gap-2">
+        {/* Leaderboard Button */}
+        <button
+          type="button"
+          onClick={() => setShowLeaderboard(true)}
+          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-parchment-700/90 border-2 border-parchment-500 flex items-center justify-center text-lg sm:text-xl shadow-xl hover:bg-parchment-600 transition-all"
+          title="House Leaderboard"
+        >
+          🏆
+        </button>
+        
+        {/* Owl Post Button */}
+        <button
+          type="button"
+          onClick={() => setShowOwlModal(true)}
+          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-parchment-700/90 border-2 border-parchment-500 flex items-center justify-center text-lg sm:text-xl shadow-xl hover:bg-parchment-600 transition-all"
+          title="Send Owl Post"
+        >
+          ✉️
+        </button>
+        
+        {/* Galleon count badge */}
+        <div className="px-2 py-1 rounded-full bg-yellow-500 text-xs font-bold text-black shadow flex items-center gap-1">
+          {galleons.filter(g => !g.collected).length} 🪙
+        </div>
+      </div>
+      
+      {/* Leaderboard Modal */}
+      <AnimatePresence>
+        {showLeaderboard && (
+          <motion.div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowLeaderboard(false)}
+          >
+            <motion.div
+              className="parchment-panel rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl border-2 border-parchment-400"
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.8 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-2xl font-magical text-parchment-900 text-center mb-4">🏆 House Cup</h2>
+              <div className="space-y-3">
+                {Object.entries(leaderboard)
+                  .sort(([,a], [,b]) => b - a)
+                  .map(([houseName, points], index) => (
+                    <div 
+                      key={houseName}
+                      className={`flex items-center justify-between p-3 rounded-lg ${
+                        index === 0 ? 'bg-yellow-100 border-2 border-yellow-400' : 'bg-parchment-100'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">
+                          {houseName === 'Gryffindor' ? '🦁' : 
+                           houseName === 'Slytherin' ? '🐍' : 
+                           houseName === 'Ravenclaw' ? '🦅' : '🦡'}
+                        </span>
+                        <span className="font-bold text-parchment-800">{houseName}</span>
+                      </div>
+                      <span className="text-lg font-bold text-parchment-700">{points} pts</span>
+                    </div>
+                  ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLeaderboard(false)}
+                className="mt-4 w-full py-2 bg-parchment-700 text-white rounded-lg hover:bg-parchment-800"
+              >
+                Close
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Owl Post Banner */}
+      <AnimatePresence>
+        {showOwlPostBanner && owlPostMessage && (
+          <motion.div
+            className="fixed top-0 left-0 right-0 z-50 flex justify-center pt-4"
+            initial={{ y: -100 }}
+            animate={{ y: 0 }}
+            exit={{ y: -100 }}
+          >
+            <div className="bg-parchment-100 border-2 border-parchment-500 rounded-lg px-6 py-3 shadow-xl flex items-center gap-3 max-w-lg">
+              <motion.span 
+                className="text-3xl"
+                animate={{ x: [0, 10, 0] }}
+                transition={{ repeat: Infinity, duration: 1 }}
+              >
+                🦉
+              </motion.span>
+              <div>
+                <p className="text-sm text-parchment-600">Owl Post from {owlPostMessage.sender}</p>
+                <p className="font-bold text-parchment-900">{owlPostMessage.message}</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Owl Post Modal (send UI) */}
+      <AnimatePresence>
+        {showOwlModal && (
+          <motion.div
+            className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowOwlModal(false)}
+          >
+            <motion.div
+              className="parchment-panel rounded-2xl p-4 max-w-md w-full mx-4 shadow-2xl border-2 border-parchment-400"
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-magical mb-2">Send Owl Post</h3>
+              <textarea
+                value={owlDraft}
+                onChange={(e) => setOwlDraft(e.target.value)}
+                className="w-full h-24 p-2 rounded border border-parchment-300 bg-parchment-50 mb-3"
+                maxLength={200}
+                placeholder="Write your Owl Post..."
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    if (!owlDraft.trim()) return;
+                    await sendOwlPost(owlDraft.trim());
+                    setOwlDraft('');
+                    setShowOwlModal(false);
+                  }}
+                  className="px-3 py-2 bg-amber-500 text-white rounded"
+                >
+                  Send
+                </button>
+                <button
+                  onClick={() => setShowOwlModal(false)}
+                  className="px-3 py-2 bg-parchment-200 rounded"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Daily Prophet News Ticker */}
+      {newsTickerItems.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-30 bg-parchment-900/90 border-t border-parchment-700 py-1 overflow-hidden">
+          <div className="flex items-center">
+            <span className="px-3 text-sm font-bold text-parchment-300 whitespace-nowrap">📰 Daily Prophet:</span>
+            <div className="overflow-hidden flex-1">
+              <motion.div
+                className="flex gap-8 whitespace-nowrap"
+                animate={{ x: [0, -1000] }}
+                transition={{ repeat: Infinity, duration: 20, ease: "linear" }}
+              >
+                {newsTickerItems.map((item) => (
+                  <span key={item.id} className="text-sm text-parchment-200">
+                    {item.text}
+                  </span>
+                ))}
+                {newsTickerItems.map((item) => (
+                  <span key={`${item.id}-dup`} className="text-sm text-parchment-200">
+                    {item.text}
+                  </span>
+                ))}
+              </motion.div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Rain indicator */}
+      {isRaining && (
+        <div className="fixed top-4 right-4 z-30 bg-blue-600/80 text-white px-3 py-1 rounded-full text-sm font-bold shadow-lg flex items-center gap-2">
+          🌧️ Raining
+        </div>
+      )}
 
       {/* Lumos Button - DESKTOP ONLY */}
       {/* Lumos Button - Shows whenever darkness is active (real night or override) */}
@@ -2709,7 +3830,7 @@ export default function MapContainer() {
                     <div className="flex items-center gap-2">
                       {/* Progress dots */}
                       <div className="flex gap-1 mr-2">
-                        {[0, 1, 2, 3, 4, 5, 6].map((step) => (
+                        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((step) => (
                           <div
                             key={step}
                             className={`w-1.5 h-1.5 rounded-full transition-colors ${
@@ -2833,6 +3954,52 @@ export default function MapContainer() {
                   
                   {tutorialStep === 6 && (
                     <div className="text-center">
+                      <div className="text-5xl mb-4">🪄✨</div>
+                      <h3 className="text-xl font-magical text-parchment-900 mb-3">Magic Spells</h3>
+                      <p className="text-sm text-parchment-700 mb-2">
+                        Tap the <strong>Wand button 🪄</strong> to open your spell menu:
+                      </p>
+                      <div className="text-xs text-parchment-600 space-y-1 text-left px-4">
+                        <p>🌑 <strong>Obscuro:</strong> Blind nearby wizards!</p>
+                        <p>⚡ <strong>Expelliarmus:</strong> Knock them across the map!</p>
+                        <p>👻 <strong>Invisibility:</strong> Become invisible for 15s</p>
+                        <p>🧪 <strong>Polyjuice:</strong> Disguise as another player!</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {tutorialStep === 7 && (
+                    <div className="text-center">
+                      <div className="text-5xl mb-4">💰🏆</div>
+                      <h3 className="text-xl font-magical text-parchment-900 mb-3">Collect Galleons!</h3>
+                      <p className="text-sm text-parchment-700 mb-2">
+                        Find <strong>golden coins 🪙</strong> scattered around the map!
+                      </p>
+                      <p className="text-sm text-parchment-700 mb-4">
+                        Each coin adds <strong>+10 points</strong> to your House. 
+                        Tap the <strong>🏆 Trophy</strong> to see the leaderboard!
+                      </p>
+                    </div>
+                  )}
+                  
+                  {tutorialStep === 8 && (
+                    <div className="text-center">
+                      <div className="text-5xl mb-4">⚡🦉</div>
+                      <h3 className="text-xl font-magical text-parchment-900 mb-3">Special Events</h3>
+                      <p className="text-sm text-parchment-700 mb-2">
+                        Watch for the <strong>Daily Prophet</strong> news ticker at the bottom!
+                      </p>
+                      <p className="text-sm text-parchment-700 mb-2">
+                        Stand near the <strong>🪞 Mirror of Erised</strong> for a surprise...
+                      </p>
+                      <p className="text-sm text-parchment-700 mb-4">
+                        Every 10 minutes, one wizard becomes <strong>THE CHOSEN ONE ⚡</strong> with golden footprints!
+                      </p>
+                    </div>
+                  )}
+                  
+                  {tutorialStep === 9 && (
+                    <div className="text-center">
                       <div className="text-5xl mb-4">🎉</div>
                       <h3 className="text-xl font-magical text-parchment-900 mb-3">You&apos;re Ready!</h3>
                       <p className="text-sm text-parchment-700 mb-4">
@@ -2844,7 +4011,7 @@ export default function MapContainer() {
 
                   {/* Progress dots */}
                   <div className="flex justify-center gap-2 mb-4">
-                    {[0, 1, 2, 3, 4, 5, 6].map((step) => (
+                    {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((step) => (
                       <div
                         key={step}
                         className={`w-2 h-2 rounded-full transition-colors ${
@@ -2879,7 +4046,7 @@ export default function MapContainer() {
                         </button>
                       )}
                       
-                      {tutorialStep < 6 ? (
+                      {tutorialStep < 9 ? (
                         <button
                           type="button"
                           onClick={() => setTutorialStep(tutorialStep + 1)}
@@ -3061,6 +4228,9 @@ export default function MapContainer() {
             : null
             : null
         }
+        onCastSpell={castSpell}
+        spellCooldowns={spellCooldowns}
+        activeSpells={activeSpells}
       />
     </div>
   );
