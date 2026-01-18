@@ -130,6 +130,8 @@ export default function MapContainer() {
   const [users, setUsers] = useState({});
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [blocksData, setBlocksData] = useState({});
+  const [joinNotifications, setJoinNotifications] = useState([]);
+  const prevUsersRef = useRef({});
   const [showBlockList, setShowBlockList] = useState(false);
   const [isBanned, setIsBanned] = useState(false);
   const [chatStatuses, setChatStatuses] = useState({});
@@ -434,6 +436,34 @@ export default function MapContainer() {
 
     return () => unsubscribe();
   }, [roomId, userId]);
+
+  // Detect newly joined users and show a small notification
+  useEffect(() => {
+    const prev = prevUsersRef.current || {};
+    const newUids = Object.keys(users || {}).filter((uid) => !prev[uid]);
+    newUids.forEach((uid) => {
+      if (!uid || uid === userId) return; // skip self
+      if (blockedUsers.includes(uid)) return; // skip blocked
+      const u = users[uid];
+      if (!u) return;
+
+      const notif = {
+        id: `${uid}-${Date.now()}`,
+        uid,
+        name: u.name || 'Wizard',
+        house: u.house || ''
+      };
+
+      setJoinNotifications((prev) => [notif, ...prev]);
+
+      // auto-dismiss
+      setTimeout(() => {
+        setJoinNotifications((prev) => prev.filter((n) => n.id !== notif.id));
+      }, 4000);
+    });
+
+    prevUsersRef.current = users;
+  }, [users, userId, blockedUsers]);
 
   useEffect(() => {
     if (!roomId || !userId) return;
@@ -1996,12 +2026,32 @@ export default function MapContainer() {
 
       {/* Top-left corner info (subtle) - hidden on mobile */}
       <div className="absolute top-4 left-4 z-10 pointer-events-none hidden sm:block">
-        <p className="text-xs text-parchment-600 opacity-60">
+        <p className="text-sm text-white opacity-90 font-semibold">
           {name} of {house} • {roomLabel}
         </p>
-        <p className="text-[10px] text-parchment-700 opacity-40 mt-1">
+        <p className="text-sm text-white opacity-80 mt-1">
           Arrow keys / WASD to move • Shift to run • Scroll to zoom • Drag to pan • Esc to close
         </p>
+      </div>
+
+      {/* Join notifications (top-right) */}
+      <div className="fixed top-6 right-6 z-40 pointer-events-none">
+        <AnimatePresence>
+          {joinNotifications.map((n) => (
+            <motion.div
+              key={n.id}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 20 }}
+              className="mb-2 pointer-events-auto"
+            >
+              <div className="bg-black/70 backdrop-blur-sm text-white rounded-lg px-3 py-2 shadow-lg">
+                <div className="font-semibold">{n.name}</div>
+                <div className="text-xs opacity-80">is walking on the map</div>
+              </div>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
 
       {/* MOBILE: Hidden notification listener - always mounted to receive owl notifications */}
