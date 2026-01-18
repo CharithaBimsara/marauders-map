@@ -1,108 +1,76 @@
 # Virtual Marauder's Map
 
-A fully immersive Harry Potter themed virtual Marauder's Map built with Next.js 14, Tailwind CSS, Framer Motion, and Firebase Realtime Database.
+A lightweight, immersive, Harry Potter–inspired multiplayer map where users appear as footprints and can chat when nearby. Built with Next.js 14, Tailwind CSS, Framer Motion, and Firebase Realtime Database.
 
-## ✨ Features
+## Overview
 
-### Immersive Experience
-- **Full-screen map** - The map covers the entire browser viewport
-- **"I solemnly swear..."** - Oath unlock screen to enter the map
-- **"Mischief Managed"** - Press Escape to close the map with animation
-- **Candlelight flicker effect** - Dynamic lighting overlay
-- **Parchment texture** - Aged paper grain and burnt edges
-- **Time of day** - Morning/Afternoon/Evening/Night with visual overlays
-- **Curfew warnings** - Alert when out after hours
+- **What it is:** Real-time, canvas-driven map with directional footprints, time-of-day effects, room zones, and proximity chat.
+- **Primary use:** Prototype social interactions and spatial chat mechanics in a themed environment.
 
-### Map Features
-- **Room labels** - Great Hall, Library, Common Rooms, etc.
-- **Secret passages** - Hidden dotted paths between locations
-- **Moving staircases** - Animated staircase positions
-- **House common room zones** - Glowing areas for each house
+## Features
 
-### Movement & Footprints
-- **Arrow keys or WASD** - Move around the map
-- **Shift to run** - Faster movement with running animation
-- **Realistic footprint pairs** - Left/right alternating footsteps
-- **Direction-aware footprints** - Footprints rotate based on movement
-- **Ink fade effect** - Footprints fade like ink over time
-- **House-colored trails** - Footprints match your house color
+- Full-screen, parchment-styled map with burnt edges and candle flicker
+- Direction-aware, house-colored footprints with ink-fade trails
+- Moving staircases, room labels, secret passages, and common-room zones
+- Proximity chat with whisper mode and owl notifications
+- Block/report moderation and a 20-user-per-room cap
 
-### Social Features
-- **Proximity chat** - Talk to nearby wizards within range
-- **Whisper mode** - Shorter chat range for private conversations
-- **Owl delivery notifications** - Animated owl brings message alerts
-- **Block & report system** - Safety features for moderation
-- **Room system** - Auto-balancing chambers (20 users max each)
+## Tech Stack
 
-### Hidden UI
-- **Slide-out panels** - UI hidden until hovered
-- **Block list panel** - Slides from right edge
-- **Chat panel** - Slides up from bottom
+- Next.js 14 (App Router)
+- Tailwind CSS
+- Framer Motion
+- Firebase Auth (Anonymous) + Realtime Database
+- HTML5 Canvas for rendering
 
 ## Quick Start
 
-1. Copy `.env.local.example` to `.env.local` and fill in Firebase config values.
-2. Install dependencies: `npm install`
-3. Run the dev server: `npm run dev`
-4. Open http://localhost:3000
+1. Copy `.env.local.example` to `.env.local` and provide Firebase values.
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Start the development server:
+
+```bash
+npm run dev
+```
+
+4. Open http://localhost:3000 in your browser.
 
 ## Controls
 
-| Key | Action |
-|-----|--------|
-| Arrow keys / WASD | Move |
-| Shift + Move | Run (faster) |
-| Scroll | Zoom in/out |
-| Drag | Pan the map |
-| Escape | Close map ("Mischief Managed") |
+- Arrow keys / WASD — Move
+- Shift + Move — Run (faster)
+- Scroll — Zoom
+- Drag — Pan
+- Escape — Close map ("Mischief Managed")
 
 ## Firebase Setup
 
 - Enable **Anonymous** authentication in Firebase Auth.
-- Create a **Realtime Database** (in test mode for local testing).
-- Apply rules from `firebase/database.rules.json`.
+- Create a Realtime Database and apply rules from `firebase/database.rules.json`.
 
-## Free Hosting Options
+## Deployment
 
-### Option A: Vercel (recommended)
-1. Push this repo to GitHub.
-2. Import the repo in Vercel.
-3. Set the environment variables from `.env.local.example` in the Vercel project settings.
-4. Deploy. Vercel provides a public URL.
+- Recommended: Vercel — connect the repository, set env vars, and deploy.
+- Alternative: Firebase Hosting using the Firebase CLI (see project docs for export steps).
 
-### Option B: Firebase Hosting
-1. Install Firebase CLI and run `firebase login`.
-2. Run `firebase init hosting` and select the project.
-3. Set build output to `out` and run `npm run build` followed by `npx next export`.
-4. Deploy with `firebase deploy`.
+## Project Layout (key files)
 
-## Required Assets
+- `src/app/*` — Root layout, global styles
+- `src/components/MapContainer.js` — Canvas rendering and main map logic
+- `src/components/ProximityChat.js` — Chat UI and notifications
+- `src/lib/firebase.js` — Firebase client initialization
+- `src/lib/canvas.js` — Drawing helpers (footprints, effects)
 
-- Add a parchment-style Hogwarts map image at `public/hogwarts-map.jpg`.
+## Notes
 
-## Project Structure
+- The project includes a parchment theme and time-of-day overlays; tweak `src/app/globals.css` and `tailwind.config.js` for styling.
+- For local testing, using relaxed Firebase rules is common; tighten them before production.
 
-```
-src/
-├── app/
-│   ├── globals.css      # Parchment theme, animations
-│   ├── layout.js        # Root layout
-│   └── page.js          # Home page
-├── components/
-│   ├── MapContainer.js  # Main map logic, canvas rendering
-│   └── ProximityChat.js # Chat UI with owl notifications
-└── lib/
-    ├── canvas.js        # Canvas drawing utilities, effects
-    ├── firebase.js      # Firebase client setup
-    ├── moderation.js    # Content filtering
-    ├── npcs.js          # NPC system (disabled by default)
-    └── proximity.js     # Distance helpers
-```
+---
 
-## Tech Stack
-
-- **Next.js 14** - App Router, React Server Components
-- **Tailwind CSS** - Parchment color theme
-- **Framer Motion** - Smooth animations
-- **Firebase** - Auth + Realtime Database
-- **HTML5 Canvas** - Efficient rendering with effects
+If you want, I can also run the app locally, push this change, or open a PR with additional docs (example env file, screenshots, or server rules summary).
