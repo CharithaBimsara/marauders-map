@@ -23,8 +23,8 @@
             "knockbackX": { ".validate": "newData.isNumber()" },
             "knockbackY": { ".validate": "newData.isNumber()" },
             "knockedBackBy": { ".validate": "newData.isString() && newData.val().length <= 30" },
-            "polyjuiceAs": { ".validate": "newData.isString() && newData.val().length <= 30" },
-            "polyjuiceHouse": { ".validate": "newData.isString() && newData.val().length <= 20" }
+            "polyjuiceAs": { ".validate": "newData.val() === null || (newData.isString() && newData.val().length <= 30)" },
+            "polyjuiceHouse": { ".validate": "newData.val() === null || (newData.isString() && newData.val().length <= 20)" }
           }
         },
         
@@ -74,6 +74,21 @@
           "sender": { ".validate": "newData.isString() && newData.val().length <= 30" },
           "house": { ".validate": "newData.isString() && newData.val().length <= 20" },
           "timestamp": { ".validate": "newData.isNumber()" }
+        },
+        "weather": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "isRaining": { ".validate": "newData.isBoolean()" },
+          "changedAt": { ".validate": "newData.isNumber()" }
+        },
+        "polyjuiceAlert": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "byUid": { ".validate": "newData.isString() && newData.val() === auth.uid" },
+          "byName": { ".validate": "newData.isString() && newData.val().length <= 30" },
+          "disguise": { ".validate": "newData.isString() && newData.val().length <= 30" },
+          "at": { ".validate": "newData.isNumber()" },
+          "expiresAt": { ".validate": "newData.isNumber()" }
         },
         
         "leaderboard": {

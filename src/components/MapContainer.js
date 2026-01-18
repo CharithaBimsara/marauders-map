@@ -228,6 +228,21 @@ export default function MapContainer() {
   const encounterCooldownRef = useRef({}); // Track cooldown per NPC
   const lastLumosClickRef = useRef(0); // For double-click detection
 
+  // Shared Lumos click handler (used by mobile joystick and desktop button)
+  const handleLumosClick = useCallback(() => {
+    const now = Date.now();
+    const timeSinceLastClick = now - lastLumosClickRef.current;
+
+    if (timeSinceLastClick < 400) {
+      setLumosFlash(true);
+      setLumosActive(true);
+      setTimeout(() => setLumosFlash(false), 3000);
+    } else {
+      setLumosActive(prev => !prev);
+    }
+    lastLumosClickRef.current = now;
+  }, []);
+
   // ============================================
   // MAGIC SPELL SYSTEM STATE
   // ============================================
@@ -288,6 +303,54 @@ export default function MapContainer() {
   // - Real night = isCurfew() returns true (9PM-6AM)
   // - Real day = isCurfew() returns false
   const isRealNight = isCurfew();
+
+  // Helper: add news ticker item (stable and available early)
+  const addNewsItem = useCallback((text) => {
+    const newsItem = {
+      id: Date.now(),
+      text,
+      timestamp: Date.now()
+    };
+    setNewsTickerItems(prev => [newsItem, ...prev].slice(0, 10)); // Keep last 10
+  }, []);
+
+  // Collect a galleon (hoisted so movement effects can call it)
+  const collectGalleon = useCallback(async (index) => {
+    if (!roomId || !house) return;
+    try {
+      await update(ref(db, `rooms/${roomId}/galleons/${index}`), { collected: true });
+      const newPoints = (leaderboard[house] || 0) + 10;
+      await update(ref(db, `rooms/${roomId}/leaderboard`), { [house]: newPoints });
+      setGalleons(prev => prev.map((g, i) => i === index ? { ...g, collected: true } : g));
+      setSpellCastMessage({ text: `💰 +10 points for ${house}!`, type: 'success' });
+      addNewsItem(`💰 ${name} collected a Galleon for ${house}!`);
+      setTimeout(() => setSpellCastMessage(null), 2000);
+    } catch (e) {
+      console.error('collectGalleon failed', e);
+    }
+  }, [roomId, house, name, leaderboard, addNewsItem]);
+
+  // Trigger owl delivery animation (hoisted)
+  const triggerOwlDelivery = useCallback((fromUser, toUser) => {
+    setOwlDeliveries((prev) => [
+      ...prev,
+      {
+        fromX: fromUser.x,
+        fromY: fromUser.y,
+        toX: toUser.x,
+        toY: toUser.y,
+        startTime: Date.now()
+      }
+    ]);
+  }, []);
+
+  // Trigger spell effect (hoisted)
+  const triggerSpellEffect = useCallback((x, y, type = "lumos") => {
+    setSpellEffects((prev) => [
+      ...prev,
+      { x, y, type, startTime: Date.now() }
+    ]);
+  }, []);
   
   // When to show darkness:
   // - Real night WITHOUT override = dark (need Lumos)
@@ -374,10 +437,25 @@ export default function MapContainer() {
   // MAGICAL WEATHER (RAIN)
   // ============================================
   useEffect(() => {
-    // Random chance to start/stop rain every 5 minutes
-    const weatherInterval = setInterval(() => {
+    if (!roomId) return;
+
+    // Sync weather to room so all clients see the same rain state
+    const weatherRef = ref(db, `rooms/${roomId}/weather`);
+    const unsubscribeWeather = onValue(weatherRef, (snapshot) => {
+      const val = snapshot.val();
+      setIsRaining(Boolean(val?.isRaining));
+    });
+
+    // Random chance to toggle rain every 5 minutes (writes to DB)
+    const weatherInterval = setInterval(async () => {
       if (Math.random() < 0.3) { // 30% chance
-        setIsRaining(prev => !prev);
+        const newState = !isRaining;
+        try {
+          await set(ref(db, `rooms/${roomId}/weather`), { isRaining: newState, changedAt: Date.now() });
+        } catch (e) {
+          console.error('Failed to write weather state', e);
+        }
+
         if (!isRaining) {
           addNewsItem("🌧️ Magical rain begins to fall over Hogwarts!");
         } else {
@@ -385,9 +463,12 @@ export default function MapContainer() {
         }
       }
     }, 300000); // 5 minutes
-    
-    return () => clearInterval(weatherInterval);
-  }, [isRaining]);
+
+    return () => {
+      clearInterval(weatherInterval);
+      unsubscribeWeather();
+    };
+  }, [roomId, isRaining, addNewsItem]);
   
   // Update rain particles
   useEffect(() => {
@@ -798,7 +879,7 @@ export default function MapContainer() {
       clearTimeout(initialTimeout);
       clearInterval(interval);
     };
-  }, [roomId, userId, users]);
+  }, [roomId, userId, users, addNewsItem]);
   
   // Listen for galleon updates
   useEffect(() => {
@@ -1155,7 +1236,7 @@ export default function MapContainer() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [userId, hasProfile, isBanned, roomId, selfPosition.x, selfPosition.y, movementDirection, isPlayerFrozen, activeSpells.alohomora]);
+  }, [userId, hasProfile, isBanned, roomId, selfPosition.x, selfPosition.y, movementDirection, isPlayerFrozen, activeSpells.alohomora, collectGalleon, galleons, canvasSize.width, canvasSize.height]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1317,6 +1398,20 @@ export default function MapContainer() {
     const mapHeight = mapImageRef.current?.height || 800;
     const clampedX = Math.max(0, Math.min(nextX, mapWidth - 24));
     const clampedY = Math.max(0, Math.min(nextY, mapHeight - 24));
+
+    // Check for galleon collection (same as keyboard handler)
+    galleons.forEach((galleon, index) => {
+      if (!galleon.collected) {
+        const dist = Math.sqrt((clampedX - galleon.x) ** 2 + (clampedY - galleon.y) ** 2);
+        if (dist < 25) {
+          collectGalleon(index);
+        }
+      }
+    });
+
+    // Check if near Mirror of Erised
+    const mirrorDist = Math.sqrt((clampedX - MIRROR_OF_ERISED.x) ** 2 + (clampedY - MIRROR_OF_ERISED.y) ** 2);
+    setNearMirror(mirrorDist < MIRROR_OF_ERISED.radius);
 
     setSelfPosition({ x: clampedX, y: clampedY });
     setLastMoveAt(Date.now());
@@ -1649,7 +1744,14 @@ export default function MapContainer() {
     lumosFlash,
     showDarkness,
     scaryNPCsActive,
-    scaryNPCs
+    scaryNPCs,
+    floatingCandles,
+    hedwig,
+    scabbers,
+    isChosen,
+    rainParticles,
+    galleons,
+    isRaining
   ]);
 
   const isBlockedPair = useCallback(
@@ -1705,15 +1807,6 @@ export default function MapContainer() {
   // NEWS TICKER & OWL POST FUNCTIONS
   // ============================================
   
-  const addNewsItem = useCallback((text) => {
-    const newsItem = {
-      id: Date.now(),
-      text,
-      timestamp: Date.now()
-    };
-    setNewsTickerItems(prev => [newsItem, ...prev].slice(0, 10)); // Keep last 10
-  }, []);
-  
   const sendOwlPost = useCallback(async (message) => {
     if (!roomId || !message.trim()) return;
     
@@ -1726,30 +1819,31 @@ export default function MapContainer() {
     
     addNewsItem(`🦉 ${name} sent an Owl Post!`);
   }, [roomId, name, house, addNewsItem]);
+
+  // Listen for polyjuice alerts in the room and show a warning for others
+  useEffect(() => {
+    if (!roomId) return;
+    const alertRef = ref(db, `rooms/${roomId}/polyjuiceAlert`);
+    const unsub = onValue(alertRef, (snap) => {
+      const val = snap.val();
+      if (!val) return;
+      // If alert expired, remove it and ignore
+      if (val.expiresAt && val.expiresAt < Date.now()) {
+        try { remove(alertRef); } catch (e) { console.error('Failed to remove expired polyjuiceAlert', e); }
+        return;
+      }
+      // Show a visible warning in the news ticker
+      addNewsItem(`⚠️ Warning: ${val.byName} used Polyjuice Potion! Be careful.`);
+      // Optionally clear local spell message
+      setSpellCastMessage({ text: `⚠️ ${val.byName} used Polyjuice!`, type: 'warning' });
+      setTimeout(() => setSpellCastMessage(null), 4000);
+    });
+    return () => unsub();
+  }, [roomId, addNewsItem]);
   
   // ============================================
-  // GALLEON COLLECTION
+  // GALLEON COLLECTION (hoisted earlier)
   // ============================================
-  
-  const collectGalleon = useCallback(async (index) => {
-    if (!roomId || !house) return;
-    
-    // Mark as collected
-    await update(ref(db, `rooms/${roomId}/galleons/${index}`), {
-      collected: true
-    });
-    
-    // Update house points
-    const newPoints = (leaderboard[house] || 0) + 10;
-    await update(ref(db, `rooms/${roomId}/leaderboard`), {
-      [house]: newPoints
-    });
-    
-    setGalleons(prev => prev.map((g, i) => i === index ? { ...g, collected: true } : g));
-    setSpellCastMessage({ text: `💰 +10 points for ${house}!`, type: 'success' });
-    addNewsItem(`💰 ${name} collected a Galleon for ${house}!`);
-    setTimeout(() => setSpellCastMessage(null), 2000);
-  }, [roomId, house, name, leaderboard, addNewsItem]);
 
   // ============================================
   // DRAWING HELPER FUNCTIONS
@@ -1920,6 +2014,19 @@ export default function MapContainer() {
           polyjuiceAs: disguiseTarget.name,
           polyjuiceHouse: disguiseTarget.house
         });
+
+        // Broadcast a room alert so others get a warning about Polyjuice
+        try {
+          await set(ref(db, `rooms/${roomId}/polyjuiceAlert`), {
+            byUid: userId,
+            byName: name,
+            disguise: disguiseTarget.name,
+            at: Date.now(),
+            expiresAt: Date.now() + 10000
+          });
+        } catch (e) {
+          console.error('Failed to write polyjuice alert', e);
+        }
         
         setSpellCastMessage({ text: `🧪 POLYJUICE! You now appear as "${disguiseTarget.name}" to others!`, type: 'success' });
         triggerSpellEffect(selfPosition.x, selfPosition.y, 'polyjuice');
@@ -1931,6 +2038,18 @@ export default function MapContainer() {
             polyjuiceAs: null,
             polyjuiceHouse: null
           });
+          // Clear room-level polyjuice alert if it's ours or expired so new entrants
+          // don't see stale warnings
+          try {
+            const alertRef = ref(db, `rooms/${roomId}/polyjuiceAlert`);
+            const snap = await get(alertRef);
+            const val = snap.val();
+            if (!val || val.byUid === userId || (val.expiresAt && val.expiresAt < Date.now())) {
+              await remove(alertRef);
+            }
+          } catch (e) {
+            console.error('Failed to clear polyjuiceAlert on expire', e);
+          }
           setSpellCastMessage({ text: '🧪 Polyjuice effect wore off!', type: 'info' });
           setTimeout(() => setSpellCastMessage(null), 2000);
         }, config.duration);
@@ -1973,12 +2092,19 @@ export default function MapContainer() {
         const knockbackY = Math.floor(Math.random() * (mapHeight - 100)) + 50;
         
         // Update target's Firebase to trigger knockback
-        await update(ref(db, `rooms/${roomId}/users/${target.uid}`), {
-          knockedBack: true,
-          knockbackX,
-          knockbackY,
-          knockedBackBy: name
-        });
+        try {
+          await update(ref(db, `rooms/${roomId}/users/${target.uid}`), {
+            knockedBack: true,
+            knockbackX,
+            knockbackY,
+            knockedBackBy: name
+          });
+        } catch (err) {
+          console.error('Failed to write knockback for expelliarmus', err);
+          setSpellCastMessage({ text: `⚠️ Failed to cast Expelliarmus: ${err?.message || 'permission denied'}`, type: 'warning' });
+          setTimeout(() => setSpellCastMessage(null), 3000);
+          break;
+        }
         
         setShowKnockbackFlash(true);
         setTimeout(() => setShowKnockbackFlash(false), 300);
@@ -2011,7 +2137,7 @@ export default function MapContainer() {
         break;
       }
     }
-  }, [roomId, userId, selfPosition, users, name, spellCooldowns]);
+  }, [roomId, userId, selfPosition, users, name, spellCooldowns, addNewsItem, triggerSpellEffect]);
 
   const handleSelectChatTarget = (target) => {
     if (!target || !userId || isBlockedPair(target.uid)) return;
@@ -2204,27 +2330,7 @@ export default function MapContainer() {
     setRoomId(null);
   };
 
-  // Trigger owl delivery animation
-  const triggerOwlDelivery = (fromUser, toUser) => {
-    setOwlDeliveries((prev) => [
-      ...prev,
-      {
-        fromX: fromUser.x,
-        fromY: fromUser.y,
-        toX: toUser.x,
-        toY: toUser.y,
-        startTime: Date.now()
-      }
-    ]);
-  };
-
-  // Trigger spell effect
-  const triggerSpellEffect = (x, y, type = "lumos") => {
-    setSpellEffects((prev) => [
-      ...prev,
-      { x, y, type, startTime: Date.now() }
-    ]);
-  };
+  
 
   // Profile setup with magical welcome
   if (!hasProfile) {
@@ -2467,85 +2573,7 @@ export default function MapContainer() {
         />
       </div>
 
-      {/* ============================================ */}
-      {/* WAND SPELL MENU - DESKTOP */}
-      {/* ============================================ */}
-      <div className="fixed z-40 hidden sm:block left-8 bottom-8">
-        {/* Wand Button */}
-        <button
-          type="button"
-          onClick={() => setShowSpellMenu(!showSpellMenu)}
-          className={`w-14 h-14 rounded-full border-2 flex items-center justify-center text-2xl transition-all shadow-xl
-            ${showSpellMenu 
-              ? 'bg-amber-500/90 border-amber-400 text-amber-900 scale-110 shadow-[0_0_20px_rgba(251,191,36,0.6)]' 
-              : 'bg-parchment-700/90 border-parchment-500 text-parchment-100 hover:bg-parchment-600'
-            }
-            ${activeSpells.invisibility ? 'opacity-50' : ''}`}
-          title="Open Wand Menu"
-        >
-          🪄
-        </button>
-        
-        {/* Radial Spell Menu */}
-        <AnimatePresence>
-          {showSpellMenu && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.5 }}
-              className="absolute bottom-16 left-0"
-            >
-              <div className="relative w-48 h-48">
-                {Object.entries(SPELL_CONFIG).map(([spellKey, spell], index) => {
-                  const angle = (index * (360 / 4) - 90) * (Math.PI / 180);
-                  const radius = 70;
-                  const x = Math.cos(angle) * radius + 80;
-                  const y = Math.sin(angle) * radius + 80;
-                  
-                  const isOnCooldown = spellCooldowns[spellKey] > Date.now();
-                  const cooldownRemaining = isOnCooldown 
-                    ? Math.ceil((spellCooldowns[spellKey] - Date.now()) / 1000) 
-                    : 0;
-                  
-                  return (
-                    <motion.button
-                      key={spellKey}
-                      initial={{ opacity: 0, scale: 0 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      onClick={() => castSpell(spellKey)}
-                      disabled={isOnCooldown}
-                      className={`absolute w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center text-xl transition-all shadow-lg
-                        ${isOnCooldown 
-                          ? 'bg-gray-600/80 border-gray-500 text-gray-400 cursor-not-allowed' 
-                          : 'bg-parchment-800/90 border-parchment-500 text-white hover:scale-110 hover:shadow-xl'
-                        }`}
-                      style={{ 
-                        left: x, 
-                        top: y,
-                        transform: 'translate(-50%, -50%)',
-                        boxShadow: isOnCooldown ? 'none' : `0 0 15px ${spell.color}40`
-                      }}
-                      title={`${spell.name}${isOnCooldown ? ` (${cooldownRemaining}s)` : ''}`}
-                    >
-                      <span>{spell.icon}</span>
-                      {isOnCooldown && (
-                        <span className="text-[10px] font-bold">{cooldownRemaining}s</span>
-                      )}
-                    </motion.button>
-                  );
-                })}
-                
-                {/* Center label */}
-                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-                  <span className="text-parchment-300 text-xs font-bold">SPELLS</span>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      {/* Left desktop wand removed — use right-bottom vertical spell menu for desktop */}
 
       {/* Spell Cast Message */}
       <AnimatePresence>
@@ -2559,6 +2587,106 @@ export default function MapContainer() {
                 spellCastMessage.type === 'warning' ? 'bg-amber-600/90' : 'bg-blue-600/90'}`}
           >
             {spellCastMessage.text}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Desktop bottom-right action row (desktop only) */}
+      <div className="hidden sm:flex fixed bottom-6 right-6 z-40 items-center gap-3 p-2 bg-black/20 rounded-full backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={() => setShowLeaderboard(true)}
+          className="w-12 h-12 rounded-full bg-parchment-700/90 border-2 border-parchment-500 flex items-center justify-center text-xl shadow-md hover:scale-105 transition-transform"
+          title="House Leaderboard"
+        >
+          🏆
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowOwlModal(true)}
+          className="w-12 h-12 rounded-full bg-parchment-700/90 border-2 border-parchment-500 flex items-center justify-center text-xl shadow-md hover:scale-105 transition-transform"
+          title="Send Owl Post"
+        >
+          ✉️
+        </button>
+
+        {showDarkness && (
+          <button
+            type="button"
+            onClick={handleLumosClick}
+            className={`w-12 h-12 rounded-full flex items-center justify-center text-xl shadow-md transition-transform ${lumosActive ? 'bg-yellow-300/90 border-yellow-400' : 'bg-parchment-700/90 border-parchment-500'}`}
+            title="Lumos"
+          >
+            {lumosFlash ? '⚡' : lumosActive ? '☀️' : '🪄'}
+          </button>
+        )}
+
+        {!nightOverride ? (
+          <button
+            type="button"
+            onClick={() => setShowNightWarning(true)}
+            className="w-12 h-12 rounded-full bg-indigo-900/90 border-indigo-600 flex items-center justify-center text-xl shadow-md hover:scale-105 transition-transform"
+            title="Toggle Night"
+          >
+            🌙
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setNightOverride(false)}
+            className="w-12 h-12 rounded-full bg-amber-600/90 border-amber-400 flex items-center justify-center text-xl shadow-md hover:scale-105 transition-transform"
+            title="Exit Night Override"
+          >
+            ❌
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowSpellMenu(prev => !prev)}
+          className="w-12 h-12 rounded-full bg-parchment-700/90 border-2 border-parchment-500 flex items-center justify-center text-xl shadow-md hover:scale-105 transition-transform"
+          title="Spells"
+        >
+          🪄
+        </button>
+
+        <div className="px-3 py-1 rounded-full bg-yellow-500 text-xs font-bold text-black shadow flex items-center gap-1">
+          {galleons.filter(g => !g.collected).length} 🪙
+        </div>
+      </div>
+
+      {/* Desktop vertical spell menu (appears above right-bottom action row) */}
+      <AnimatePresence>
+        {showSpellMenu && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="hidden sm:block fixed right-6 bottom-20 z-50"
+          >
+            <div className="flex flex-col items-center gap-2 p-2 bg-black/20 rounded-lg backdrop-blur-sm shadow-md">
+              {Object.entries(SPELL_CONFIG).map(([spellKey, spell]) => {
+                const isOnCooldown = (spellCooldowns[spellKey] || 0) > Date.now();
+                const cooldownRemaining = isOnCooldown ? Math.ceil(((spellCooldowns[spellKey] || 0) - Date.now()) / 1000) : 0;
+
+                return (
+                  <button
+                    key={spellKey}
+                    onClick={() => {
+                      castSpell(spellKey);
+                      setShowSpellMenu(false);
+                    }}
+                    disabled={isOnCooldown}
+                    className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-lg transition-transform ${isOnCooldown ? 'bg-gray-600/80 border-gray-500 text-gray-400 cursor-not-allowed' : 'bg-parchment-800/90 border-parchment-500 text-white hover:scale-105'}`}
+                    title={`${spell.name}${isOnCooldown ? ` (${cooldownRemaining}s)` : ''}`}
+                    style={{ boxShadow: isOnCooldown ? 'none' : `0 0 10px ${spell.color}40` }}
+                  >
+                    <span className="text-xl">{spell.icon}</span>
+                  </button>
+                );
+              })}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -2579,7 +2707,7 @@ export default function MapContainer() {
             >
               <div className="text-6xl mb-4">🌑</div>
               <div className="text-white text-2xl font-bold">OBSCURO!</div>
-              <div className="text-gray-400 text-sm mt-2">You've been blinded!</div>
+              <div className="text-gray-400 text-sm mt-2">You&apos;ve been blinded!</div>
               <div className="text-gray-500 text-xs mt-1">
                 {Math.ceil((blindedUntil - Date.now()) / 1000)}s remaining
               </div>
@@ -2601,7 +2729,7 @@ export default function MapContainer() {
       </AnimatePresence>
 
       {/* Active Spell Indicators */}
-      <div className="fixed z-30 top-20 right-4 flex flex-col gap-2">
+      <div className="fixed z-30 top-20 right-4 flex flex-col gap-2 sm:hidden">
         {activeSpells.polyjuice && (
           <motion.div
             initial={{ opacity: 0, x: 20 }}
@@ -2641,7 +2769,7 @@ export default function MapContainer() {
       </div>
       
       {/* Top Left Buttons - Below name badge on mobile, normal on desktop */}
-      <div className="fixed z-30 top-16 sm:top-4 left-4 flex items-center gap-2">
+      <div className="fixed z-30 top-16 sm:top-4 left-4 flex items-center gap-2 sm:hidden">
         {/* Leaderboard Button */}
         <button
           type="button"
@@ -2829,96 +2957,7 @@ export default function MapContainer() {
         </div>
       )}
 
-      {/* Lumos Button - DESKTOP ONLY */}
-      {/* Lumos Button - Shows whenever darkness is active (real night or override) */}
-      {/* Position higher (bottom-[100px]) when Exit Mode button is visible, otherwise bottom-8 */}
-      {showDarkness && (
-        <div className={`fixed z-30 hidden sm:flex flex-col items-center gap-1 sm:right-8 sm:w-14 ${nightOverride ? 'sm:bottom-[160px]' : 'sm:bottom-28'}`}>
-          <button
-            type="button"
-            onClick={() => {
-              const now = Date.now();
-              const timeSinceLastClick = now - lastLumosClickRef.current;
-              
-              if (timeSinceLastClick < 400) {
-                // Double-click: LUMOS MAXIMA - show full daylight map!
-                setLumosFlash(true);
-                setLumosActive(true);
-                setTimeout(() => setLumosFlash(false), 3000); // 3 seconds of daylight
-              } else {
-                // Single click: Toggle Lumos
-                setLumosActive(!lumosActive);
-              }
-              lastLumosClickRef.current = now;
-            }}
-            className={`rounded-full border-2 flex items-center justify-center transition-all shadow-xl
-              w-14 h-14 text-2xl
-              ${lumosActive 
-                ? 'bg-yellow-300/90 border-yellow-400 text-yellow-900 shadow-[0_0_20px_rgba(255,255,150,0.6)]' 
-                : 'bg-parchment-800/90 border-parchment-600 text-parchment-200 hover:bg-parchment-700'
-              }
-              ${lumosFlash ? 'animate-pulse scale-110' : ''}`}
-            title={lumosActive ? "Nox (Turn off) • Double-tap for LUMOS MAXIMA!" : "Lumos (Light wand) • Double-tap for LUMOS MAXIMA!"}
-          >
-            {lumosFlash ? "⚡" : lumosActive ? "☀️" : "🪄"}
-          </button>
-          <AnimatePresence mode="wait">
-            <motion.span
-              key={lumosFlash ? "maxima" : lumosActive ? "lumos" : "nox"}
-              initial={{ opacity: 0, y: 6, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6 }}
-              className={`text-xs font-medium ${lumosFlash ? 'text-yellow-400 font-bold drop-shadow-[0_0_8px_rgba(255,255,150,0.6)]' : lumosActive ? 'text-yellow-200' : 'text-parchment-400'}`}
-            >
-              {lumosFlash ? 'Maxima!' : lumosActive ? 'Nox' : 'Lumos'}
-            </motion.span>
-          </AnimatePresence>
-        </div>
-      )}
-      
-      
-
-      {/* Override Night Button - DESKTOP ONLY - Shows when override is NOT active */}
-      {!nightOverride && (
-        <div className="fixed z-30 hidden sm:flex flex-col items-center gap-1 sm:right-8 sm:bottom-[100px]">
-          <button
-            type="button"
-            onClick={() => setShowNightWarning(true)}
-            className={`rounded-full border-2 flex items-center justify-center transition-all shadow-xl
-              w-11 h-11 text-lg
-              ${isRealNight 
-                ? 'bg-purple-900/90 border-purple-500 text-purple-200 hover:bg-purple-800 shadow-[0_0_15px_rgba(147,51,234,0.5)]' 
-                : 'bg-indigo-900/90 border-indigo-600 text-indigo-200 hover:bg-indigo-800'
-              }`}
-            title={isRealNight ? "Override to Daylight (DANGER: Enhanced Scary Mode!)" : "Override to Night Mode"}
-          >
-            {isRealNight ? "☀️" : "🌙"}
-          </button>
-          <span className="text-xs text-parchment-400 font-medium">
-            {isRealNight ? 'Day Mode' : 'Night'}
-          </span>
-        </div>
-      )}
-      
-      {/* Disable Night Override Button - DESKTOP ONLY - Shows when override is active */}
-      {nightOverride && (
-        <div className="fixed z-30 hidden sm:flex flex-col items-center gap-1 sm:right-8 sm:bottom-8">
-          <button
-            type="button"
-            onClick={() => setNightOverride(false)}
-            className={`rounded-full border-2 flex items-center justify-center transition-all shadow-xl
-              w-14 h-14 text-2xl
-              ${isEnhancedScaryMode 
-                ? 'bg-red-700/90 border-red-500 text-red-100 hover:bg-red-600 animate-pulse shadow-[0_0_20px_rgba(255,0,0,0.5)]'
-                : 'bg-amber-600/90 border-amber-400 text-amber-100 hover:bg-amber-500'
-              }`}
-            title="Disable Override - Return to normal"
-          >
-            ❌
-          </button>
-          <span className="text-xs text-parchment-400 font-medium">Exit Mode</span>
-        </div>
-      )}
+      {/* Right-side desktop lumos/night/exit buttons removed — use single desktop action row instead */}
 
       {/* Night Override Warning Modal */}
       <AnimatePresence>
@@ -4201,19 +4240,7 @@ export default function MapContainer() {
         showLumos={showDarkness}
         lumosActive={lumosActive}
         lumosFlash={lumosFlash}
-        onLumosClick={() => {
-          const now = Date.now();
-          const timeSinceLastClick = now - lastLumosClickRef.current;
-          
-          if (timeSinceLastClick < 400) {
-            setLumosFlash(true);
-            setLumosActive(true);
-            setTimeout(() => setLumosFlash(false), 3000);
-          } else {
-            setLumosActive(!lumosActive);
-          }
-          lastLumosClickRef.current = now;
-        }}
+        onLumosClick={handleLumosClick}
         nightOverride={nightOverride}
         isRealNight={isRealNight}
         isEnhancedScaryMode={isEnhancedScaryMode}
