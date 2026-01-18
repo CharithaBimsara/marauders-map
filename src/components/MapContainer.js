@@ -1679,9 +1679,10 @@ export default function MapContainer() {
       </div>
 
       {/* Lumos Button - DESKTOP ONLY */}
-      {/* Lumos Button - Only shows when darkness is active AND override is NOT active */}
-      {showDarkness && !nightOverride && (
-        <div className="fixed z-30 hidden sm:flex flex-col items-center gap-1 sm:right-8 sm:bottom-8">
+      {/* Lumos Button - Shows whenever darkness is active (real night or override) */}
+      {/* Position higher (bottom-[100px]) when Exit Mode button is visible, otherwise bottom-8 */}
+      {showDarkness && (
+        <div className={`fixed z-30 hidden sm:flex flex-col items-center gap-1 sm:right-8 sm:w-14 ${nightOverride ? 'sm:bottom-[160px]' : 'sm:bottom-28'}`}>
           <button
             type="button"
             onClick={() => {
@@ -1710,34 +1711,21 @@ export default function MapContainer() {
           >
             {lumosFlash ? "⚡" : lumosActive ? "☀️" : "🪄"}
           </button>
-          <span className="text-xs text-parchment-400 font-medium">
-            {lumosFlash ? 'Maxima!' : lumosActive ? 'Nox' : 'Lumos'}
-          </span>
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={lumosFlash ? "maxima" : lumosActive ? "lumos" : "nox"}
+              initial={{ opacity: 0, y: 6, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6 }}
+              className={`text-xs font-medium ${lumosFlash ? 'text-yellow-400 font-bold drop-shadow-[0_0_8px_rgba(255,255,150,0.6)]' : lumosActive ? 'text-yellow-200' : 'text-parchment-400'}`}
+            >
+              {lumosFlash ? 'Maxima!' : lumosActive ? 'Nox' : 'Lumos'}
+            </motion.span>
+          </AnimatePresence>
         </div>
       )}
       
-      {/* Lumos/Nox Text Indicator - DESKTOP ONLY */}
-      {showDarkness && !nightOverride && (
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={lumosFlash ? "maxima" : lumosActive ? "lumos" : "nox"}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            className={`fixed z-30 pointer-events-none
-              hidden sm:block
-              sm:right-8 sm:bottom-[100px]
-              font-magical text-center
-              ${lumosFlash 
-                ? 'text-sm sm:text-xl text-yellow-400 font-bold drop-shadow-[0_0_10px_rgba(255,255,0,0.8)]' 
-                : lumosActive 
-                  ? 'text-[10px] sm:text-sm text-yellow-200' 
-                  : 'text-[10px] sm:text-sm text-parchment-400'}`}
-          >
-            {lumosFlash ? "✨ MAXIMA! ✨" : lumosActive ? "Lumos!" : "Dark..."}
-          </motion.div>
-        </AnimatePresence>
-      )}
+      
 
       {/* Override Night Button - DESKTOP ONLY - Shows when override is NOT active */}
       {!nightOverride && (

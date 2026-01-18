@@ -138,7 +138,7 @@ export default function VirtualJoystick({
       {/* Horizontal row: Run -> Joystick -> Lumos -> Night Override */}
       <div className="flex items-center gap-4">
         {/* Run button - Left */}
-        <div className="flex flex-col items-center gap-1 relative">
+        <div className="flex flex-col items-center gap-1 relative -mt-4">
           <HighlightRing show={highlightButton === 'run'} />
           <button
             type="button"
@@ -196,8 +196,8 @@ export default function VirtualJoystick({
         </div>
 
         {/* Lumos Button - After joystick */}
-        {showLumos && !nightOverride && (
-          <div className="flex flex-col items-center gap-1 relative">
+        {showLumos && (
+          <div className="flex flex-col items-center gap-1 relative -mt-4">
             <HighlightRing show={highlightButton === 'lumos'} />
             <button
               type="button"
@@ -211,7 +211,7 @@ export default function VirtualJoystick({
             >
               {lumosFlash ? "⚡" : lumosActive ? "☀️" : "🪄"}
             </button>
-            <span className="text-[8px] text-parchment-600 font-medium">
+            <span className="text-[8px] -mt-1 text-parchment-600 font-medium">
               {lumosFlash ? 'Maxima!' : lumosActive ? 'Nox' : 'Lumos'}
             </span>
           </div>
@@ -219,7 +219,7 @@ export default function VirtualJoystick({
 
         {/* Override Night Button - Right side */}
         {!nightOverride && (
-          <div className="flex flex-col items-center gap-1 relative">
+          <div className="flex flex-col items-center gap-1 relative -mt-4">
             <HighlightRing show={highlightButton === 'night'} />
             <button
               type="button"
@@ -240,7 +240,7 @@ export default function VirtualJoystick({
 
         {/* Disable Override Button - Right side (when override active) */}
         {nightOverride && (
-          <div className="flex flex-col items-center gap-1">
+          <div className="flex flex-col items-center gap-1 relative -mt-4">
             <button
               type="button"
               onClick={onDisableOverride}
