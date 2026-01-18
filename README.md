@@ -72,5 +72,3 @@ npm run dev
 - For local testing, using relaxed Firebase rules is common; tighten them before production.
 
 ---
-
-If you want, I can also run the app locally, push this change, or open a PR with additional docs (example env file, screenshots, or server rules summary).
